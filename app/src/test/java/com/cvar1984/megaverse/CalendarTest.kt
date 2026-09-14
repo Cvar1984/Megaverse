@@ -226,4 +226,37 @@ class CalendarTest {
         }
         return best
     }
+
+    @Test
+    fun aBodyAlreadyUpAtMidnightStillReportsWhenItSets() {
+        // The Moon rises about fifty minutes later each night, so it spends much of
+        // the month already above the horizon when the day starts. That day has a
+        // set and no rise, which must not be mistaken for the body never rising -
+        // they are the same absence of a crossing, told apart only by where the
+        // altitude sat.
+        var found = 0
+        for (offset in 0..31) {
+            val day = RiseSet.events(moon, midnight(2026, 5, 1) + offset, 51.5, 0.0)
+            if (day.riseJd != null || day.setJd == null) continue
+            found += 1
+            assertTrue("it was up, so not alwaysDown", !day.alwaysDown)
+            assertTrue("it set, so not alwaysUp", !day.alwaysUp)
+            assertTrue("it must have been above the horizon", day.maxAltitude > RiseSet.HORIZON)
+        }
+        assertTrue("a month should contain such a day, found $found", found >= 1)
+    }
+
+    @Test
+    fun aBodyThatOnlyRisesReportsNoSet() {
+        // The mirror of the above, and the other half of the same branch.
+        var found = 0
+        for (offset in 0..31) {
+            val day = RiseSet.events(moon, midnight(2026, 5, 1) + offset, 51.5, 0.0)
+            if (day.setJd != null || day.riseJd == null) continue
+            found += 1
+            assertTrue(!day.alwaysUp)
+            assertTrue(!day.alwaysDown)
+        }
+        assertTrue("a month should contain such a day, found $found", found >= 1)
+    }
 }

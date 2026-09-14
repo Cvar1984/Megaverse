@@ -139,4 +139,77 @@ class SettingsTest {
             assertTrue("${spec.key} needs something to step through", spec.choices.size >= 2)
         }
     }
+
+    @Test
+    fun eachPathSaysWhetherItIsCarryingItsDates() {
+        // Three states, not two: a line you cannot read dates off is a different
+        // thing from one you can, and the label is the only place that distinction
+        // is visible before you leave the menu.
+        for (key in listOf("ecliptic", "moonPath")) {
+            val spec = Settings.specs.first { it.key == key }
+            val labels = buildList {
+                repeat(spec.choices.size) {
+                    add(Settings.label(spec))
+                    Settings.cycle(spec)
+                }
+            }
+            assertEquals("$key should read Off, Line, Line + dates in that order",
+                listOf("Off", "Line", "Line + dates"), labels)
+        }
+    }
+
+    @Test
+    fun theTogglesReadBackThroughTheirOwnAccessors() {
+        // The labels are what the menu shows; these are what the sky screen reads.
+        // They are separate code paths and only one of them was being checked.
+        val cases = listOf(
+            "constellations" to { Settings.constellations },
+            "dynEquatorial" to { Settings.dynEquatorial },
+            "dynAzimuth" to { Settings.dynAzimuth },
+        )
+        for ((key, read) in cases) {
+            val spec = Settings.specs.first { it.key == key }
+            assertEquals("$key starts off", false, read())
+            Settings.cycle(spec)
+            assertEquals("$key should read on after one step", true, read())
+            Settings.cycle(spec)
+            assertEquals("$key should come back off", false, read())
+        }
+    }
+
+    @Test
+    fun thePathSettingsAreReadBackAsTheirStep() {
+        // Unlike the toggles these are three-valued, so the accessor hands back the
+        // step rather than a boolean and the draw code switches on it.
+        val ecliptic = Settings.specs.first { it.key == "ecliptic" }
+        assertEquals(0, Settings.ecliptic)
+        Settings.cycle(ecliptic)
+        assertEquals(1, Settings.ecliptic)
+        Settings.cycle(ecliptic)
+        assertEquals(2, Settings.ecliptic)
+
+        val moon = Settings.specs.first { it.key == "moonPath" }
+        assertEquals(0, Settings.moonPath)
+        Settings.cycle(moon)
+        assertEquals(1, Settings.moonPath)
+    }
+
+    @Test
+    fun aStoredValueThisBuildNoLongerOffersFallsBack() {
+        // Someone who set the grid to 10 degrees on an older build, or who has a
+        // key left behind from a ring that has since changed, must not end up with
+        // the app trying to draw a spacing it does not have.
+        for (spec in Settings.specs) {
+            for (good in spec.choices) {
+                assertEquals("$spec.key should keep $good", good, Settings.sanitise(spec, good))
+            }
+            for (junk in listOf(-1, 7, 99, Int.MAX_VALUE, Int.MIN_VALUE)) {
+                assertEquals(
+                    "${spec.key} should fall back on $junk",
+                    spec.choices.first(),
+                    Settings.sanitise(spec, junk),
+                )
+            }
+        }
+    }
 }

@@ -64,14 +64,22 @@ object Settings {
         val store = context.getSharedPreferences("sky", Context.MODE_PRIVATE)
         prefs = store
         for (spec in specs) {
-            // Storage outlives any one version of the app, so anything no longer in
-            // the list falls back to the default rather than being trusted.
-            val stored = store.getInt(spec.key, spec.choices.first())
-            values[spec.key] = if (stored in spec.choices) stored else spec.choices.first()
+            values[spec.key] = sanitise(spec, store.getInt(spec.key, spec.choices.first()))
         }
     }
 
     operator fun get(spec: SettingSpec): Int = values[spec.key] ?: spec.choices.first()
+
+    /**
+     * What a value read back out of storage is worth.
+     *
+     * Storage outlives any one version of the app, so a spacing this build no
+     * longer offers - or one dropped from a ring entirely - has to fall back to the
+     * default rather than being trusted. Held apart from [load] because that needs
+     * a Context and this is the only part of it worth checking.
+     */
+    fun sanitise(spec: SettingSpec, stored: Int): Int =
+        if (stored in spec.choices) stored else spec.choices.first()
 
     /**
      * Steps a setting to the next value in its list and round to the start again. A

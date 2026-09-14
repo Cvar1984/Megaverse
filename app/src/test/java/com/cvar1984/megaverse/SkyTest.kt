@@ -284,6 +284,41 @@ class SkyTest {
     }
 
     @Test
+    fun theCatalogueSendsEachKindOfObjectToTheRightMaths() {
+        // Everything on screen is placed through this one dispatch, so a type
+        // wired to the wrong branch would move a whole class of object at once -
+        // and a planet drawn with a star's fixed coordinates looks perfectly
+        // plausible until you check it against the sky a month later.
+        val jd = utcJd(2026, 9, 14, 3, 30)
+
+        for (planet in SkyCatalog.byType(SkyType.PLANET)) {
+            val viaCatalogue = SkyCatalog.raDec(planet, jd)
+            val direct = Planets.planetPosition(planet.id, jd)
+            assertEquals(planet.name, direct[0], viaCatalogue[0], 1e-9)
+            assertEquals(planet.name, direct[1], viaCatalogue[1], 1e-9)
+        }
+
+        val sun = SkyCatalog.findById("sun")!!
+        assertEquals(SolarLunar.sunPosition(jd)[0], SkyCatalog.raDec(sun, jd)[0], 1e-9)
+        val moon = SkyCatalog.findById("moon")!!
+        assertEquals(SolarLunar.moonPosition(jd)[0], SkyCatalog.raDec(moon, jd)[0], 1e-9)
+    }
+
+    @Test
+    fun aStarIsHandedBackExactlyAsTheCatalogueHoldsIt() {
+        // Stars do not move, so the clock must not touch them. If the dispatch ever
+        // sent them through a series they would drift with the date, which is the
+        // one thing a fixed catalogue position cannot do.
+        for (star in SkyCatalog.byType(SkyType.STAR)) {
+            for (jd in listOf(utcJd(2024, 1, 1), utcJd(2026, 9, 14), utcJd(2031, 6, 30))) {
+                val raDec = SkyCatalog.raDec(star, jd)
+                assertEquals(star.name, star.ra, raDec[0], 0.0)
+                assertEquals(star.name, star.dec, raDec[1], 0.0)
+            }
+        }
+    }
+
+    @Test
     fun everyConstellationVertexIsAUnitVector() {
         // A figure with a bad coordinate pair in it would still draw, just in the
         // wrong place, so the length is what catches a mistyped declination.
