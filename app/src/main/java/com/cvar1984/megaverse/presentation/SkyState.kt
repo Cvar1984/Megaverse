@@ -11,6 +11,10 @@ import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationManager
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
+import androidx.core.os.CancellationSignal
+import androidx.core.util.Consumer
+import androidx.core.location.LocationManagerCompat
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.cvar1984.megaverse.sky.DeviceAim
@@ -172,6 +176,11 @@ class SkyState(private val context: Context) : SensorEventListener {
         requestLocation(force = false)
     }
 
+    // The permission is checked on the first line, and every call is wrapped in
+    // runCatching so a permission revoked between the check and the call is caught
+    // rather than crashing. Lint follows neither the helper nor runCatching, so it
+    // has to be told.
+    @android.annotation.SuppressLint("MissingPermission")
     private fun requestLocation(force: Boolean) {
         if (!hasLocationPermission()) return
         val manager = context.getSystemService(LocationManager::class.java) ?: return
@@ -196,10 +205,21 @@ class SkyState(private val context: Context) : SensorEventListener {
 
         locating = location == null
         runCatching {
-            manager.getCurrentLocation(provider, null, context.mainExecutor) { fix ->
-                locating = false
-                fix?.let { apply(it) }
-            }
+            // The compat forms rather than the framework ones: getCurrentLocation
+            // landed in API 30 and getMainExecutor in 28, and both are backported
+            // here to the oldest watch Wear Compose will run on.
+            LocationManagerCompat.getCurrentLocation(
+                manager,
+                provider,
+                // Typed, because the two overloads differ only in which
+                // CancellationSignal they take and a bare null picks neither.
+                null as CancellationSignal?,
+                ContextCompat.getMainExecutor(context),
+                Consumer<Location?> { fix ->
+                    locating = false
+                    fix?.let { apply(it) }
+                },
+            )
         }.onFailure { locating = false }
     }
 

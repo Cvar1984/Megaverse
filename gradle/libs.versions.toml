@@ -6,6 +6,8 @@ composeMaterial3 = "1.5.6"
 composeFoundation = "1.5.6"
 activityCompose = "1.8.0"
 coreSplashscreen = "1.2.0"
+coreKtx = "1.15.0"
+desugarJdkLibs = "2.1.5"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -16,6 +18,8 @@ compose-foundation = { group = "androidx.wear.compose", name = "compose-foundati
 compose-navigation = { group = "androidx.wear.compose", name = "compose-navigation", version.ref = "composeFoundation" }
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
+core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 
 junit = { group = "junit", name = "junit", version = "4.13.2" }
 

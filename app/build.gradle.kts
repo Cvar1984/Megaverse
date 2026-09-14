@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.cvar1984.megaverse"
-        minSdk = 30
+        minSdk = 25
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -32,6 +32,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // Backports java.time, which the calendar and the path date marks are
+        // written against, to watches older than API 26. No source change: the
+        // code keeps calling LocalDate and ZoneId exactly as written.
+        isCoreLibraryDesugaringEnabled = true
     }
     useLibrary("wear-sdk")
     buildFeatures {
@@ -45,9 +49,11 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.navigation)
+    implementation(libs.core.ktx)
     implementation(libs.core.splashscreen)
     implementation(libs.ui)
     implementation(libs.ui.graphics)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     testImplementation(libs.junit)
 }
 
