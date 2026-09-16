@@ -44,6 +44,8 @@ import com.cvar1984.megaverse.sky.SkyMath
 import com.cvar1984.megaverse.sky.SkyObject
 import com.cvar1984.megaverse.sky.PathMark
 import com.cvar1984.megaverse.sky.SkyPaths
+import com.cvar1984.megaverse.sky.SkyType
+import com.cvar1984.megaverse.sky.SolarLunar
 import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -59,6 +61,24 @@ private const val FOV_HALF = 45.0
 
 /** Within this much of the object the marker takes a green ring. */
 private const val LOCK_DEGREES = 8.0
+
+/**
+ * How close the aim has to be before Show All names what it is pointing at. Tighter
+ * than the lock, because naming the wrong one of two neighbouring objects is worse
+ * than naming neither.
+ */
+private const val IDENTIFY_DEGREES = 5.0
+
+/**
+ * How far up the Milky Way is turned. The real thing is faint, and this lies under
+ * the grids and every object on the screen, so it has to read as sky without
+ * drowning what is drawn on top of it.
+ */
+private const val MILKY_WAY_GAIN = 0.75f
+
+/** The reticle: a hole this wide, then a tick this long, in reference units. */
+private const val CROSSHAIR_GAP = 4f
+private const val CROSSHAIR_TICK = 4f
 
 /** Half-width of the edge chevron, and how far a marker pins inside the rim so that
  *  the marker and its chevron both stay on the glass. */
@@ -164,7 +184,7 @@ fun SkyScreen(target: SkyObject?, state: SkyState, onSettings: () -> Unit) {
         }
 
         SkyCanvas(target, state, LocalConfiguration.current.isScreenRound)
-        Chrome(target, readout)
+        Chrome(readout)
     }
 }
 
@@ -172,6 +192,7 @@ fun SkyScreen(target: SkyObject?, state: SkyState, onSettings: () -> Unit) {
 @Composable
 private fun SkyCanvas(target: SkyObject?, state: SkyState, round: Boolean) {
     val density = LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val cardinalPaint = remember {
         skyPaint(HorizonGrid.HORIZON_COLOR, with(density) { 11.sp.toPx() })
     }
@@ -196,6 +217,15 @@ private fun SkyCanvas(target: SkyObject?, state: SkyState, round: Boolean) {
 
         // Nothing is clipped and nothing is reserved: the sky is laid down across
         // the whole display first, and the text goes on top of it.
+        //
+        // The Milky Way goes down before any of it. The grids and the figures are
+        // references drawn over the sky; this is the sky.
+        if (Settings.milkyWay && MilkyWay.supported) {
+            with(MilkyWay) {
+                drawMilkyWay(context, frame, snapshot.latDeg, snapshot.lstDeg, view, MILKY_WAY_GAIN)
+            }
+        }
+
         for (line in HorizonGrid.meshFor(Settings.horizon)) {
             drawRun(frame, line.points, view, Color(line.color))
         }
@@ -272,12 +302,17 @@ private fun SkyCanvas(target: SkyObject?, state: SkyState, round: Boolean) {
         val zenith = DeviceAim.viewOffset(frame, 0.0, 0.0, 1.0)
 
         if (target == null) {
-            drawWholeSky(snapshot, frame, view, scale, sunOffset, zenith)
+            drawWholeSky(
+                snapshot, frame, view, scale, sunOffset, zenith,
+                snapshot.identify(frame)?.obj,
+            )
         } else {
             snapshot.find(target)?.let {
                 drawTarget(it, frame, view, scale, round, sunOffset, zenith)
             }
         }
+
+        drawCrosshair(view, scale)
     }
 }
 
@@ -347,6 +382,7 @@ private fun DrawScope.drawWholeSky(
     scale: Float,
     sunOffset: DoubleArray,
     zenith: DoubleArray,
+    identified: SkyObject?,
 ) {
     for (placed in snapshot.placed) {
         val enu = placed.enu
@@ -364,7 +400,47 @@ private fun DrawScope.drawWholeSky(
         drawSkyObject(
             px, py, placed.obj, ObjectArt.color(placed.obj), scale, offset, sunOffset, zenith
         )
+
+        // A ring round the one being named underneath, so there is no doubt which
+        // of two neighbours the name belongs to. Sits outside the crosshair's reach,
+        // because the two land on top of each other exactly when you are on target.
+        if (placed.obj.id == identified?.id) {
+            drawCircle(
+                Color.White,
+                ObjectArt.radius(placed.obj) * scale + (CROSSHAIR_GAP + CROSSHAIR_TICK + 3f) * scale,
+                Offset(px, py),
+                style = Stroke(1f),
+            )
+        }
     }
+}
+
+/**
+ * Whatever the watch is pointing closest to, if anything is near enough to name.
+ */
+private fun SkySnapshot.identify(frame: FloatArray): Placed? {
+    val i = DeviceAim.nearest(DeviceAim.aimDirection(frame), directions, IDENTIFY_DEGREES)
+    return if (i < 0) null else placed[i]
+}
+
+/**
+ * A small gapped reticle on the aim point.
+ *
+ * Four ticks with a hole in the middle rather than a cross through it. Where the
+ * watch points is the centre of the display whether it is marked or not, so the
+ * only thing a solid reticle would add is something sitting on top of the object
+ * exactly as you close on it.
+ */
+private fun DrawScope.drawCrosshair(view: FloatArray, scale: Float) {
+    val cx = view[0]
+    val cy = view[1]
+    val gap = CROSSHAIR_GAP * scale
+    val tick = CROSSHAIR_TICK * scale
+    val colour = Color(0xFF707070)
+    drawLine(colour, Offset(cx - gap - tick, cy), Offset(cx - gap, cy), strokeWidth = 1f)
+    drawLine(colour, Offset(cx + gap, cy), Offset(cx + gap + tick, cy), strokeWidth = 1f)
+    drawLine(colour, Offset(cx, cy - gap - tick), Offset(cx, cy - gap), strokeWidth = 1f)
+    drawLine(colour, Offset(cx, cy + gap), Offset(cx, cy + gap + tick), strokeWidth = 1f)
 }
 
 /**
@@ -507,9 +583,7 @@ private const val NAME_ROW = 0.12f
 private const val LAST_ROW = 0.93f
 
 @Composable
-private fun androidx.compose.foundation.layout.BoxScope.Chrome(
-    target: SkyObject?, readout: Readout?,
-) {
+private fun androidx.compose.foundation.layout.BoxScope.Chrome(readout: Readout?) {
     if (readout == null) return
     val round = LocalConfiguration.current.isScreenRound
 
@@ -551,11 +625,11 @@ private fun androidx.compose.foundation.layout.BoxScope.Chrome(
             .padding(bottom = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (target == null) {
-            // Nothing is being aimed at, so all the screen can usefully say is
-            // where the watch is currently pointing. There is no label column and
-            // so nothing to range on: the pair is centred, each number under its
-            // own head, where a round screen is widest.
+        // The table appears whenever something is named, whether it was chosen from
+        // the menu or simply found under the crosshair. With nothing named there is
+        // no label column and so nothing to range on: the pair is centred, each
+        // number under its own head, where a round screen is widest.
+        if (readout.name == null) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceEvenly) {
                 Head("Az")
                 Head("Alt")
@@ -641,7 +715,10 @@ private fun SkyState.readout(target: SkyObject?): Readout? {
         if (Settings.equatorial > 0) add("${Settings.equatorial} ra/dec")
     }
 
-    val placed = target?.let { snapshot.find(it) }
+    // With no object chosen, the screen names whatever the crosshair is over. There
+    // is no turn/tilt to give in that case: you are already pointing at it.
+    val identifying = target == null
+    val placed = if (identifying) snapshot.identify(frame) else snapshot.find(target!!)
     if (placed == null) {
         return Readout(
             null, scales, degrees(aimAz), signedDegrees(aimElev),
@@ -655,7 +732,9 @@ private fun SkyState.readout(target: SkyObject?): Readout? {
     // Forward is the cosine of the angle off the aim, so it settles the lock on its own.
     var note: String? = null
     var tilt: String? = null
-    if (SkyMath.dacos(offset[2]) < LOCK_DEGREES) {
+    if (identifying) {
+        note = detail(placed, snapshot.jd)
+    } else if (SkyMath.dacos(offset[2]) < LOCK_DEGREES) {
         note = "On target"
     } else {
         // Written guidance is measured against gravity rather than the watch's own
@@ -687,6 +766,18 @@ private fun SkyState.readout(target: SkyObject?): Readout? {
         note,
         tilt,
     )
+}
+
+/**
+ * The one extra fact worth the room for an object being named: how bright a star
+ * is, and what phase the Moon is at. The Sun and the planets have nothing to add
+ * that the picture is not already showing.
+ */
+private fun detail(placed: Placed, jd: Double): String? = when (placed.obj.type) {
+    SkyType.STAR -> if (placed.obj.mag.isNaN()) null else "mag ${"%.2f".format(placed.obj.mag)}"
+    SkyType.MOON -> "${SolarLunar.moonPhaseName(jd)}  " +
+        "${(SolarLunar.moonIllumination(jd) * 100).roundToInt()}%"
+    else -> null
 }
 
 private fun degrees(deg: Double) = SkyMath.norm360(deg).roundToInt().toString()

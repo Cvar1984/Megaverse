@@ -49,6 +49,7 @@ object Settings {
         SettingSpec("horizonGrid", "Horizon Grid", GRID),
         SettingSpec("eqGridStep", "Equatorial Grid", GRID),
         SettingSpec("constellations", "Constellations", TOGGLE),
+        SettingSpec("milkyWay", "Milky Way", TOGGLE),
         SettingSpec("ecliptic", "Sun Path", PATH),
         SettingSpec("moonPath", "Moon Path", PATH),
         SettingSpec("dynEquatorial", "Equatorial Motion", TOGGLE),
@@ -101,6 +102,13 @@ object Settings {
     val horizon: Int get() = this["horizonGrid"]
     val equatorial: Int get() = this["eqGridStep"]
     val constellations: Boolean get() = this["constellations"] != 0
+
+    /**
+     * What you asked for, not what the watch can manage. Whether there is a shader
+     * to draw it with is the drawing code's business - folding that in here would
+     * make the setting read as off on a watch where it is merely unavailable.
+     */
+    val milkyWay: Boolean get() = this["milkyWay"] != 0
     val dynEquatorial: Boolean get() = this["dynEquatorial"] != 0
     val dynAzimuth: Boolean get() = this["dynAzimuth"] != 0
     val locationMinutes: Int get() = this["locationMinutes"]
@@ -118,6 +126,13 @@ object Settings {
             "horizonGrid", "eqGridStep" -> gridLabel(v)
             "locationMinutes" -> if (v <= 0) "One fix only" else "Every $v min"
             "dynEquatorial" -> if (v != 0) "Turns with sky" else "Held still"
+            // Says why rather than sitting there doing nothing on a watch whose
+            // system software has no shader to draw it with.
+            "milkyWay" -> when {
+                !MilkyWay.supported -> "Needs Wear OS 4"
+                v != 0 -> "On"
+                else -> "Off"
+            }
             "ecliptic", "moonPath" -> when (v) {
                 0 -> "Off"
                 1 -> "Line"

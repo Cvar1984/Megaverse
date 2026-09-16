@@ -158,7 +158,17 @@ object SkyPaths {
      * cross back for the second. The circle is then just a cosine of one plus a
      * sine of the other, with no trig per axis and no coordinate conversion.
      */
-    fun greatCircle(pole: DoubleArray): FloatArray {
+    fun greatCircle(pole: DoubleArray): FloatArray = circleAt(pole, 0.0)
+
+    /**
+     * Every direction [latDeg] away from the plane [pole] defines, as a closed run.
+     *
+     * At zero this is the great circle itself. Away from it the circle shrinks by
+     * the cosine of the latitude and lifts along the pole by its sine, which is all
+     * a circle of constant latitude is - so the band and the line it is drawn about
+     * come out of one piece of geometry.
+     */
+    fun circleAt(pole: DoubleArray, latDeg: Double): FloatArray {
         // Anything not lying along the pole will do. The equatorial z axis is the
         // obvious pick and is never within five degrees of either pole here, but
         // the fallback costs one comparison and removes the only way this can fail.
@@ -171,15 +181,18 @@ object SkyPaths {
         val u = normalise(cross(seed, pole))
         val v = normalise(cross(pole, u))
 
+        val ring = SkyMath.dcos(latDeg)
+        val lift = SkyMath.dsin(latDeg)
+
         val count = 360 / SAMPLE + 1
         val run = FloatArray(count * 3)
         for (i in 0 until count) {
             val angle = (i * SAMPLE).toDouble()
-            val c = SkyMath.dcos(angle)
-            val s = SkyMath.dsin(angle)
-            run[3 * i] = (c * u[0] + s * v[0]).toFloat()
-            run[3 * i + 1] = (c * u[1] + s * v[1]).toFloat()
-            run[3 * i + 2] = (c * u[2] + s * v[2]).toFloat()
+            val c = SkyMath.dcos(angle) * ring
+            val s = SkyMath.dsin(angle) * ring
+            run[3 * i] = (c * u[0] + s * v[0] + lift * pole[0]).toFloat()
+            run[3 * i + 1] = (c * u[1] + s * v[1] + lift * pole[1]).toFloat()
+            run[3 * i + 2] = (c * u[2] + s * v[2] + lift * pole[2]).toFloat()
         }
         return run
     }

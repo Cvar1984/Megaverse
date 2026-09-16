@@ -191,6 +191,28 @@ object DeviceAim {
     }
 
     /**
+     * Which of [directions] the watch is pointing closest to, as an index, or -1 if
+     * the nearest is further off the aim than [withinDeg].
+     *
+     * Compared as cosines rather than angles: the arccosine is monotonic, so the
+     * largest dot product is the smallest angle, and skipping it saves an inverse
+     * trig call per object on a list walked every frame.
+     */
+    fun nearest(aim: DoubleArray, directions: List<DoubleArray>, withinDeg: Double): Int {
+        var best = -1
+        var bestCos = dcos(withinDeg)
+        for (i in directions.indices) {
+            val d = directions[i]
+            val cos = aim[0] * d[0] + aim[1] * d[1] + aim[2] * d[2]
+            if (cos > bestCos) {
+                bestCos = cos
+                best = i
+            }
+        }
+        return best
+    }
+
+    /**
      * The frame for vectors kept in some other set of axes. [rows] maps those axes
      * into East-North-Up, row-major with rows E, N and U. Folding it in once a frame
      * lets a whole grid kept in that other set go straight through the draw loop.

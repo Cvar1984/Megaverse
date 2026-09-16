@@ -41,6 +41,13 @@ class SkySnapshot(
     val placed: List<Placed>,
 ) {
     fun find(obj: SkyObject): Placed? = placed.firstOrNull { it.obj.id == obj.id }
+
+    /**
+     * Just the directions, for the nearest-object search. Held with the snapshot
+     * rather than rebuilt per frame: the search runs on every sensor sample and the
+     * list only changes when the catalogue is worked out again.
+     */
+    val directions: List<DoubleArray> by lazy(LazyThreadSafetyMode.NONE) { placed.map { it.enu } }
 }
 
 /**

@@ -31,6 +31,7 @@ class SettingsTest {
         assertEquals(0, Settings.horizon)
         assertEquals(0, Settings.equatorial)
         assertEquals(false, Settings.constellations)
+        assertEquals(false, Settings.milkyWay)
         assertEquals(0, Settings.ecliptic)
         assertEquals(0, Settings.moonPath)
         assertEquals(false, Settings.dynEquatorial)
@@ -131,7 +132,7 @@ class SettingsTest {
 
     @Test
     fun everySettingHasATitleAndAStorageKey() {
-        assertEquals(8, Settings.specs.size)
+        assertEquals(9, Settings.specs.size)
         assertEquals(Settings.specs.size, Settings.specs.map { it.key }.toSet().size)
         for (spec in Settings.specs) {
             assertTrue(spec.key.isNotBlank())
@@ -164,6 +165,7 @@ class SettingsTest {
         // They are separate code paths and only one of them was being checked.
         val cases = listOf(
             "constellations" to { Settings.constellations },
+            "milkyWay" to { Settings.milkyWay },
             "dynEquatorial" to { Settings.dynEquatorial },
             "dynAzimuth" to { Settings.dynAzimuth },
         )

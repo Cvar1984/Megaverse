@@ -141,4 +141,54 @@ class ViewGeometryTest {
             assertEquals(30.0, guidance[1], 1e-3)
         }
     }
+
+    // --------------------------------------------------------- naming what you see
+
+    @Test
+    fun theNearestDirectionIsTheOneNamed() {
+        // Whatever is closest to the aim wins, and only if it is close enough. This
+        // is what stops the screen confidently naming something a quarter of the sky
+        // away just because nothing nearer happened to be in the list.
+        val aim = SkyMath.horizontalToEnu(180.0, 20.0)
+        val candidates = listOf(
+            SkyMath.horizontalToEnu(180.0, 60.0),  // 40 deg off
+            SkyMath.horizontalToEnu(183.0, 21.0),  // ~3 deg off, the winner
+            SkyMath.horizontalToEnu(140.0, 20.0),  // far
+        )
+        assertEquals(1, DeviceAim.nearest(aim, candidates, 5.0))
+        // Tighten the window past the winner and nothing is named at all.
+        assertEquals(-1, DeviceAim.nearest(aim, candidates, 2.0))
+        assertEquals(-1, DeviceAim.nearest(aim, emptyList(), 5.0))
+    }
+
+    @Test
+    fun theAimNamesWhateverItIsExactlyOn() {
+        // Pointing straight at something must pick that thing, at any part of the
+        // sky - including near the poles, where azimuth stops meaning much.
+        for (az in listOf(0.0, 95.0, 180.0, 275.0)) {
+            for (alt in listOf(-80.0, -10.0, 0.0, 45.0, 88.0)) {
+                val here = SkyMath.horizontalToEnu(az, alt)
+                val candidates = listOf(
+                    SkyMath.horizontalToEnu(az + 40.0, alt),
+                    here,
+                    SkyMath.horizontalToEnu(az, (alt - 40.0).coerceAtLeast(-90.0)),
+                )
+                assertEquals("az $az alt $alt", 1, DeviceAim.nearest(here, candidates, 5.0))
+            }
+        }
+    }
+
+    @Test
+    fun nothingBehindYouGetsNamed() {
+        // The search is over the whole sphere, so a direction diametrically opposite
+        // the aim must never be picked up by a small window.
+        val aim = SkyMath.horizontalToEnu(0.0, 10.0)
+        // Ten degrees short of antipodal, so a wide enough window can still reach it
+        // - exactly opposite would sit on the boundary and prove nothing.
+        val behind = listOf(SkyMath.horizontalToEnu(180.0, 0.0))
+        assertEquals(-1, DeviceAim.nearest(aim, behind, 5.0))
+        // A window wide enough to span the sky does reach it, which shows the -1
+        // above was the threshold talking and not a sign error.
+        assertEquals(0, DeviceAim.nearest(aim, behind, 179.0))
+    }
 }

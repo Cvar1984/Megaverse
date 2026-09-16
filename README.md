@@ -130,6 +130,11 @@ Nothing is pinned to the rim in this mode, because with the whole sky on show th
 markers would pile up around the edge. An object that is not in front of the watch
 is not drawn.
 
+A small gapped reticle marks where the watch points - four ticks with a hole in the
+middle, because a solid cross would sit on top of the object exactly as you close on
+it. Whatever the reticle is within five degrees of gets named, ringed, and given the
+one extra fact worth the room: a magnitude for a star, a phase for the Moon.
+
 ### The calendar
 
 ![Sun and Moon calendar](Screenshot/calendar.png)
@@ -162,11 +167,16 @@ back and a full-screen clickable would swallow it.
 | Horizon Grid | Off · 60 · 45 · 30 · 15 · 10 degrees | Off |
 | Equatorial Grid | Off · 60 · 45 · 30 · 15 · 10 degrees | Off |
 | Constellations | Off · On | Off |
+| Milky Way | Off · On | Off |
 | Sun Path | Off · Line · Line + dates | Off |
 | Moon Path | Off · Line · Line + dates | Off |
 | Equatorial Motion | Held still · Turns with sky | Held still |
 | Azimuth Motion | Held still · Follows position | Held still |
 | Update Location | One fix only · every 5 / 15 / 30 / 60 min | One fix only |
+
+The Milky Way is drawn per pixel on the GPU, which needs a shader the system
+software only provides from Wear OS 4. Below that the setting says so rather than
+sitting there doing nothing.
 
 Spacings that come to a whole number of hours say so. The sky turns $360^\circ$ in
 24 hours, so $15^\circ$ is one hour of it and the grid divides the sky into
@@ -358,6 +368,22 @@ Refraction *is* applied here, unlike in the grids. A grid line is its own refere
 and nothing has to agree with it, but these lines have to sit under the stars they
 join, and those stars are lifted. Without it Orion's belt draws a couple of pixels
 below its own three stars as the constellation rises.
+
+**The Milky Way** is the one thing here that is not drawn as lines, and the one
+thing that is a shader. Every other overlay projects a handful of points forward
+onto the glass; this has to go the other way - for each of 147,000 pixels, which way
+is that looking - and that inverse is hopeless on a watch CPU and nothing on a GPU.
+
+It is a photograph rather than anything computed. The band's structure is what makes
+it recognisable, and a smooth function with noise on it produces something that
+reads as dust. The plate is sampled in galactic coordinates, which is the frame it
+does not move in, so the whole thing is one matrix folded on the CPU and three dot
+products a pixel.
+
+The plate's empty sky is not black - it sits around 0.03 - and its band runs from
+about 0.19 out in Cygnus to 0.53 over the bulge. Scaling that down would wash the
+watch face grey and a power curve would crush the fainter half away, so the floor is
+lifted off and the top of the band taken as white.
 
 **Sun and Moon paths.** Both are great circles, so both are built the same way —
 from the pole they turn about. That is the whole of the difference between them:
@@ -574,3 +600,10 @@ used. Solar and lunar series are from Jean Meeus, *Astronomical Algorithms*; the
 planetary elements follow Paul Schlyter's *How to compute planetary positions*. The
 zodiac line figures follow those published with
 [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD 3-Clause).
+
+The Milky Way plate is the [ESO/S. Brunier all-sky
+panorama](https://www.eso.org/public/images/eso0932a/), used under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and downsampled to
+2048x1024. Credit: **ESO/S. Brunier**. Stellarium takes the same approach with Axel
+Mellinger's panorama, which is not what is used here - that one is in Stellarium by
+the author's own permission rather than under a licence this could rely on.

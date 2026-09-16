@@ -286,4 +286,28 @@ class SkyPathsTest {
         val strokes = com.cvar1984.megaverse.sky.Constellations.all.sumOf { it.strokes.size }
         assertEquals(strokes, com.cvar1984.megaverse.sky.Constellations.vectors().size)
     }
+
+    @Test
+    fun aCircleOfLatitudeShrinksAwayFromThePlane() {
+        // circleAt is the one piece of geometry the band and the two paths share, so
+        // it is worth pinning on its own: at the pole it collapses to a point, and
+        // at zero it is the great circle the paths are drawn from.
+        val pole = SkyMath.raDecToVector(47.0, -31.0)
+        val equator = SkyPaths.circleAt(pole, 0.0)
+        assertTrue(SkyPaths.greatCircle(pole).contentEquals(equator))
+
+        for (lat in listOf(0.0, 30.0, 60.0, 89.0)) {
+            val run = SkyPaths.circleAt(pole, lat)
+            val radius = kotlin.math.sqrt(
+                (0 until run.size / 3).maxOf { i ->
+                    val v = doubleArrayOf(
+                        run[3 * i].toDouble(), run[3 * i + 1].toDouble(), run[3 * i + 2].toDouble()
+                    )
+                    val along = dot(pole, v)
+                    1.0 - along * along
+                }
+            )
+            assertEquals("radius at $lat", SkyMath.dcos(lat), radius, 1e-5)
+        }
+    }
 }

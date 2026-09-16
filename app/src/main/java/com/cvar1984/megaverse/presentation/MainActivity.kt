@@ -7,10 +7,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import androidx.navigation.NavType
@@ -146,6 +151,7 @@ private fun Menu(title: String, content: MenuScope.() -> Unit) {
     }
 }
 
+
 /**
  * Each item carries its current value underneath it, and selecting it steps that
  * value on in place rather than opening a list to pick from, so what the menu shows
@@ -177,6 +183,17 @@ private fun SettingsScreen() {
                     transformation = SurfaceTransformation(spec),
                 )
             }
+            item { Credit() }
         }
     }
 }
+
+/** The plate's required attribution, at the foot of the settings list. */
+@Composable
+private fun Credit() = Text(
+    MilkyWay.CREDIT,
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+    textAlign = TextAlign.Center,
+    fontSize = 10.sp,
+    color = Color(0xFF8A8A8A),
+)

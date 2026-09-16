@@ -14,8 +14,8 @@ android {
         applicationId = "com.cvar1984.megaverse"
         minSdk = 25
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
     }
 
