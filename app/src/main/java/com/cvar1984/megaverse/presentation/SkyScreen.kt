@@ -46,7 +46,9 @@ import com.cvar1984.megaverse.sky.PathMark
 import com.cvar1984.megaverse.sky.SkyPaths
 import com.cvar1984.megaverse.sky.SkyType
 import com.cvar1984.megaverse.sky.SolarLunar
+import java.time.Instant
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -171,6 +173,12 @@ fun SkyScreen(target: SkyObject?, state: SkyState, onSettings: () -> Unit) {
                     if (awaitLongPressOrCancellation(down.id) != null) onSettings()
                 }
             }
+            // Turning the crown moves the sky through time, which is the whole point
+            // of putting it here rather than only on the screen that sets it: you
+            // watch the Moon climb rather than stepping to a time and going to look.
+            // Rotary is its own input stream, so none of this touches the drag that
+            // dismisses the screen.
+            .travelOnRotary(state)
     ) {
         val waiting = status
         if (waiting != null) {
@@ -563,6 +571,7 @@ private fun DrawScope.markerLimit(
  */
 private data class Readout(
     val name: String?,
+    val travelled: String?,
     val scales: List<String>,
     val aimAz: String,
     val aimAlt: String,
@@ -608,6 +617,16 @@ private fun androidx.compose.foundation.layout.BoxScope.Chrome(readout: Readout?
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+        readout.travelled?.let {
+            Text(
+                it,
+                fontSize = 11.sp,
+                color = TravelLabel,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         // What each grid's cells are worth, one line per grid that is switched on,
         // in the top right where the sky is emptiest. Each line names its frame,
         // since two grids at different spacings would otherwise be a bare number.
@@ -702,6 +721,19 @@ private fun chordFraction(round: Boolean, yFraction: Float): Float {
 }
 
 /**
+ * The instant on screen, for the line along the top.
+ *
+ * The instant and not the offset, because this row is the narrowest on a round
+ * display - it sits a tenth of the way down, where the glass has barely half its
+ * width - and the two together came to twenty-four characters and were cut off mid
+ * word. Of the two, the date is the one that says where you are; how far you came to
+ * get there is on the screen that took you.
+ */
+private fun travelledLabel(snapshot: SkySnapshot): String =
+    Instant.ofEpochMilli(snapshot.millis).atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("d MMM HH:mm"))
+
+/**
  * The numbers and words the chrome shows, worked out from the live frame.
  *
  * Held behind a derivedStateOf so that the text only recomposes when a digit it
@@ -719,13 +751,19 @@ private fun SkyState.readout(target: SkyObject?): Readout? {
         if (Settings.equatorial > 0) add("${Settings.equatorial} ra/dec")
     }
 
+    // Shown only when it is not now, and read off the snapshot rather than the live
+    // offset so it names the instant actually on screen. A sky quietly set to last
+    // Tuesday, with everything in the wrong place and nothing saying why, is the one
+    // way this feature could make the app look broken.
+    val travelled = if (snapshot.offsetMillis == 0L) null else travelledLabel(snapshot)
+
     // With no object chosen, the screen names whatever the crosshair is over. There
     // is no turn/tilt to give in that case: you are already pointing at it.
     val identifying = target == null
     val placed = if (identifying) snapshot.identify(frame) else snapshot.find(target!!)
     if (placed == null) {
         return Readout(
-            null, scales, degrees(aimAz), signedDegrees(aimElev),
+            null, travelled, scales, degrees(aimAz), signedDegrees(aimElev),
             null, null, false, null, null,
         )
     }
@@ -761,6 +799,7 @@ private fun SkyState.readout(target: SkyObject?): Readout? {
 
     return Readout(
         placed.obj.name,
+        travelled,
         scales,
         degrees(aimAz),
         signedDegrees(aimElev),

@@ -31,7 +31,6 @@ import com.cvar1984.megaverse.sky.epochMillisFromJulianDay
 import com.cvar1984.megaverse.sky.julianDayFromEpochMillis
 import kotlinx.coroutines.delay
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
@@ -93,20 +92,26 @@ fun CalendarScreen(state: SkyState) {
             }
 
             items(DAYS) { offset ->
-                DayRow(offset, fix.latitude, fix.longitude)
+                // Counted from the day the sky is set to rather than from today, so
+                // that travelling forward and opening the calendar lands on the same
+                // date the sky screen is showing instead of back at this morning.
+                DayRow(offset, state.timeOffsetMillis, fix.latitude, fix.longitude)
             }
         }
     }
 }
 
 @Composable
-private fun DayRow(offset: Int, latDeg: Double, lonDeg: Double) {
+private fun DayRow(offset: Int, travelMillis: Long, latDeg: Double, lonDeg: Double) {
     val zone = remember { ZoneId.systemDefault() }
-    val date = remember(offset) { LocalDate.now(zone).plusDays(offset.toLong()) }
+    val date = remember(offset, travelMillis) {
+        Instant.ofEpochMilli(System.currentTimeMillis() + travelMillis)
+            .atZone(zone).toLocalDate().plusDays(offset.toLong())
+    }
 
     // Midnight where you are standing, so a row holds one local calendar day rather
     // than one UTC day offset by the time zone.
-    val day = remember(offset, latDeg, lonDeg) {
+    val day = remember(date, latDeg, lonDeg) {
         val startJd = julianDayFromEpochMillis(
             date.atStartOfDay(zone).toInstant().toEpochMilli()
         )

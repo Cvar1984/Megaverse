@@ -106,7 +106,10 @@ fun SkyApp() {
                 SkyScreen(target, state) { navController.navigate("settings") }
             }
             composable("calendar") { CalendarScreen(state) }
-            composable("settings") { SettingsScreen() }
+            composable("time") { TimeScreen(state) }
+            composable("settings") {
+                SettingsScreen(state) { navController.navigate("time") }
+            }
         }
     }
 }
@@ -159,7 +162,7 @@ private fun Menu(title: String, content: MenuScope.() -> Unit) {
  * submenu, and the label cannot go stale behind the menu showing it.
  */
 @Composable
-private fun SettingsScreen() {
+private fun SettingsScreen(state: SkyState, onTime: () -> Unit) {
     val listState = rememberTransformingLazyColumnState()
     val spec = rememberTransformationSpec()
     ScreenScaffold(scrollState = listState) { contentPadding ->
@@ -169,6 +172,20 @@ private fun SettingsScreen() {
                     modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                     transformation = SurfaceTransformation(spec),
                 ) { Text("Settings") }
+            }
+            // First, and above the persisted settings rather than among them,
+            // because it is the one entry here that is not a stored preference: it
+            // opens a screen, and what it is set to is forgotten when the app stops.
+            // It still wears its value the way the rest do, so a sky that has been
+            // moved says so from the menu as well as from the sky itself.
+            item {
+                Button(
+                    onClick = onTime,
+                    label = { Text("Time") },
+                    secondaryLabel = { Text(travelLabel(state.timeOffsetMillis)) },
+                    modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                    transformation = SurfaceTransformation(spec),
+                )
             }
             items(Settings.specs.size) { index ->
                 val spec2 = Settings.specs[index]

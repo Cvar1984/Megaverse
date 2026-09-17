@@ -15,6 +15,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.os.CancellationSignal
 import androidx.core.util.Consumer
 import androidx.core.location.LocationManagerCompat
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.cvar1984.megaverse.sky.DeviceAim
@@ -24,6 +26,41 @@ import com.cvar1984.megaverse.sky.SkyObject
 import com.cvar1984.megaverse.sky.SolarLunar
 import com.cvar1984.megaverse.sky.julianDayFromEpochMillis
 
+/**
+ * How far from the present the sky may be moved, either way: ten million years.
+ *
+ * Not a fence, and not where the astronomy stops being any good - that is nearer a
+ * century, and it is written down under Accuracy rather than enforced here. This is
+ * only the place the arithmetic would stop being arithmetic. A Long of milliseconds
+ * wraps eventually, and an offset that wrapped would throw the sky to the far side
+ * of the epoch mid-turn, which reads as a crash rather than as a limit. So the
+ * offset saturates instead, several thousand times short of where Long gives out.
+ *
+ * At thirty days a detent and fifty detents a second - faster than a wrist turns -
+ * this is four weeks of unbroken spinning away. A hundred thousand years, which was
+ * the first number here, is under seven hours of it, which is not the same as out of
+ * reach. Nobody arrives here, and nothing stops them before it.
+ *
+ * The clamp lives in [SkyState.travel] alone, so the screens doing the moving cannot
+ * disagree with it: they ask for a jump, and read back what they actually got.
+ */
+const val TRAVEL_LIMIT_MILLIS = 10_000_000L * 365 * 24 * 60 * 60 * 1000
+
+/**
+ * [offsetMillis] plus [byMillis], stopping at the ends rather than wrapping past them.
+ *
+ * Math.addExact is the one that knows whether an add overflowed, which is not
+ * something worth working out by hand for the sake of avoiding an exception that is
+ * never thrown in practice. Which end it stops at comes off the direction asked for,
+ * since by the time it has overflowed the sum itself no longer says.
+ */
+internal fun saturatingAdd(offsetMillis: Long, byMillis: Long): Long =
+    try {
+        Math.addExact(offsetMillis, byMillis)
+    } catch (overflow: ArithmeticException) {
+        if (byMillis > 0) Long.MAX_VALUE else Long.MIN_VALUE
+    }
+
 /** Where one object is right now: the object, its direction, and how high it is. */
 class Placed(val obj: SkyObject, val enu: DoubleArray, val altDeg: Double, val azDeg: Double)
 
@@ -31,9 +68,14 @@ class Placed(val obj: SkyObject, val enu: DoubleArray, val altDeg: Double, val a
  * Where everything is, worked out for one instant and held between refreshes. Only
  * the rotation onto the screen is redone per frame, which is what keeps the whole
  * catalogue as cheap to draw as a single object.
+ *
+ * [millis] is the instant this shows, which is the present plus [offsetMillis] and
+ * not necessarily now. The offset is carried along so that a refresh can tell a
+ * snapshot that has merely aged from one that is of a different time altogether.
  */
 class SkySnapshot(
     val millis: Long,
+    val offsetMillis: Long,
     val jd: Double,
     val lstDeg: Double,
     val latDeg: Double,
@@ -106,6 +148,57 @@ class SkyState(private val context: Context) : SensorEventListener {
      */
     var gridLst: Double? = null
         private set
+
+    /**
+     * How far the sky being shown is from the present, in milliseconds. Zero is now,
+     * which is what it is almost always set to.
+     *
+     * Deliberately not a setting and deliberately not persisted. A watch that came
+     * back up showing last Tuesday's sky, with nothing on screen to say why, would
+     * simply look broken; the offset is a place you have gone rather than a
+     * preference you hold, so it lives as long as the app does and no longer.
+     *
+     * Free to run: the only bound is [TRAVEL_LIMIT_MILLIS], which is where the
+     * arithmetic gives out rather than where the answers do. Where the answers give
+     * out is a separate matter and a much nearer one - the planetary elements are
+     * Schlyter's, stated for 1900 to 2100, and the lunar series drifts as you leave
+     * its epoch - but that is a thing to know about a reading, not a reason to stop
+     * a wrist mid-turn.
+     */
+    var timeOffsetMillis by mutableLongStateOf(0L)
+        private set
+
+    /**
+     * Which of [STEPS] a tap or a turn of the crown moves by.
+     *
+     * Held here rather than on the screen that sets it, because it is not that
+     * screen's business: the crown moves the sky from the sky screen too, and the
+     * step you last chose is the step you meant on both.
+     */
+    var travelStep by mutableIntStateOf(DEFAULT_STEP)
+
+    /**
+     * Moves the sky to [offsetMillis] from now, clamped to the range the maths is
+     * good for.
+     *
+     * Dropping the pinned sidereal time is part of travelling, not an extra: the pin
+     * holds the equatorial grid still against a moment that has just been left, and
+     * keeping it would leave the grid describing a sky no longer on screen.
+     */
+    fun travel(offsetMillis: Long) {
+        timeOffsetMillis = offsetMillis.coerceIn(-TRAVEL_LIMIT_MILLIS, TRAVEL_LIMIT_MILLIS)
+        gridLst = null
+    }
+
+    /**
+     * Moves the sky by [byMillis] from wherever it already is.
+     *
+     * The crown calls this for every detent of a spin, so it goes through
+     * [saturatingAdd] rather than adding directly: an offset near the limit would
+     * otherwise wrap to the far side of the epoch mid-turn, and [travel] would then
+     * be clamping a number that had already become nonsense.
+     */
+    fun travelBy(byMillis: Long) = travel(saturatingAdd(timeOffsetMillis, byMillis))
 
     private var declination = 0.0
     private var running = false
@@ -260,10 +353,16 @@ class SkyState(private val context: Context) : SensorEventListener {
     fun refreshSky() {
         val fix = location ?: return
         val held = sky
-        val now = System.currentTimeMillis()
-        if (held != null && now - held.millis < refreshMillis) return
+        val shown = System.currentTimeMillis() + timeOffsetMillis
+        // Two reasons to work it out again, and they are different reasons: the held
+        // one has aged out, or it is of another time entirely. Comparing the instants
+        // alone would miss a jump backwards, which reads as a snapshot from the
+        // future and so as one that is not due yet.
+        if (held != null && held.offsetMillis == timeOffsetMillis &&
+            shown - held.millis < refreshMillis
+        ) return
 
-        val jd = julianDayFromEpochMillis(now)
+        val jd = julianDayFromEpochMillis(shown)
         val lat = fix.latitude
         val lstDeg = SkyMath.lst(jd, fix.longitude)
 
@@ -280,7 +379,8 @@ class SkyState(private val context: Context) : SensorEventListener {
         }
 
         sky = SkySnapshot(
-            now, jd, lstDeg, lat, SkyMath.horizontalToEnu(sunAltAz[1], sunAltAz[0]), placed
+            shown, timeOffsetMillis, jd, lstDeg, lat,
+            SkyMath.horizontalToEnu(sunAltAz[1], sunAltAz[0]), placed,
         )
 
         // Pinned on the first reading after a fix, and held until the next one.
