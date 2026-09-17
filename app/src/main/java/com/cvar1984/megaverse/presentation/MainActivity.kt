@@ -188,10 +188,10 @@ private fun SettingsScreen() {
     }
 }
 
-/** The plate's required attribution, at the foot of the settings list. */
+/** The required attribution for the plate and the maps, at the foot of settings. */
 @Composable
 private fun Credit() = Text(
-    MilkyWay.CREDIT,
+    MilkyWay.CREDIT + "\n" + PlanetTexture.CREDIT,
     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
     textAlign = TextAlign.Center,
     fontSize = 10.sp,

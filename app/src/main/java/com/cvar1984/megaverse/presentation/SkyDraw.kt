@@ -1,10 +1,21 @@
 package com.cvar1984.megaverse.presentation
 
+import android.content.Context
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import kotlin.math.atan2
+import kotlin.math.roundToInt
 import com.cvar1984.megaverse.sky.DeviceAim
 import com.cvar1984.megaverse.sky.SkyMath
 import com.cvar1984.megaverse.sky.SkyObject
@@ -81,6 +92,11 @@ object ObjectArt {
             "venus" -> 0xFFFFFFFF.toInt()
             "mercury" -> 0xFFAAAAAA.toInt()
             "jupiter" -> 0xFFFFFF00.toInt()
+            // Pale gold, and it has to be: this is what the rings are drawn in, and
+            // they sit against a globe the map paints cream. Saturn used to fall
+            // through to Mars's orange, which no one saw while the globe was a flat
+            // disc of the same wrong colour.
+            "saturn" -> 0xFFE8D8A8.toInt()
             else -> 0xFFFF5500.toInt()
         }
     }
@@ -134,9 +150,14 @@ object ObjectArt {
  * horizon, and every shade here comes off it, so a dimmed object stays dimmed all
  * the way through. [offset], [sunOffset] and [zenith] are directions in the watch's
  * own axes: the object, the Sun, and straight up. The last two are what orient the
- * phase and the rings.
+ * phase, the lighting and the rings.
+ *
+ * Bodies with a map of their surface are drawn from it; the rest fall back to a
+ * shaded disc in the object's own colour, which is also what happens on a screen too
+ * small for a map to say anything.
  */
 fun DrawScope.drawSkyObject(
+    context: Context,
     x: Float,
     y: Float,
     obj: SkyObject,
@@ -147,28 +168,152 @@ fun DrawScope.drawSkyObject(
     zenith: DoubleArray?,
 ) {
     val r = ObjectArt.radius(obj) * scale
+    val sphere = PlanetTexture.sphere(context, obj, (2 * r).roundToInt())
     when {
-        obj.type == SkyType.SUN -> drawSun(x, y, base, r)
-        obj.type == SkyType.MOON && sunOffset != null -> drawMoon(x, y, base, r, offset, sunOffset)
-        obj.type == SkyType.PLANET -> drawPlanet(x, y, obj, base, r, scale, offset, zenith)
+        obj.type == SkyType.SUN -> drawSun(x, y, base, r, sphere, offset, zenith)
+        obj.type == SkyType.MOON && sunOffset != null ->
+            drawMoon(x, y, base, r, sphere, offset, sunOffset, zenith)
+        obj.type == SkyType.PLANET ->
+            drawPlanet(x, y, obj, base, r, scale, sphere, offset, sunOffset, zenith)
         else -> drawCircle(Color(base), r, Offset(x, y))
     }
 }
 
 /**
- * Corona outside the disc, and a disc that brightens towards the middle. Limb
- * darkening is the one feature of the Sun's face visible to the naked eye through
- * cloud, and it keeps the disc from reading as a flat yellow dot.
+ * How far the bright spot sits from the middle of a disc, as a fraction of its
+ * radius. Enough to read as lit from one side without pushing the highlight onto
+ * the limb, where at these radii it would be a couple of pixels and lost.
  */
-private fun DrawScope.drawSun(x: Float, y: Float, base: Int, r: Float) {
-    // Each ring is a fraction of the disc rather than a fixed pixel offset, so the
-    // whole thing keeps its shape at any size. The fractions are the original
-    // offsets read off its own radius: +6, +3 and -7 against a disc of 20.
+private const val HIGHLIGHT_OFFSET = 0.38f
+
+/** How far the Sun's corona reaches, in disc radii. */
+private const val CORONA_REACH = 2.4f
+
+/** How hard the Sun's own limb darkening is laid on. */
+private const val SUN_RELIEF = 0.55f
+
+/**
+ * How much relief the Moon is given. Far less than a planet, and that is not a
+ * matter of taste: the Moon's dust backscatters, so a full Moon reads as a flat
+ * disc rather than a shaded ball. Only a little darkening at the limb.
+ */
+private const val MOON_RELIEF = 0.35f
+
+/** How far down the unlit side of the Moon is turned. Earthshine is faint. */
+private const val EARTHSHINE = 6
+
+/** White, so a sphere gradient becomes pure shading to multiply over a surface. */
+private val SHADING = 0xFFFFFFFF.toInt()
+
+/**
+ * A lit ball: white towards the light, the body's own colour across the middle,
+ * falling away to a dark limb.
+ *
+ * ([lx], [ly]) is the screen direction the light comes from, and may be (0, 0) when
+ * there is nothing to go on - the gradient then sits centred and still rounds the
+ * disc. [relief] scales the whole effect, both the shift of the highlight and the
+ * depth of the limb, so one number says how much of a ball this is.
+ *
+ * Built in [SHADING] it is a pure light-and-shade mask, which multiplied over a
+ * photograph of the surface leaves the colours alone and only says how lit each part
+ * of it is. Built in a body's own colour it is the whole drawing, for bodies with no
+ * map and for discs too small to show one.
+ *
+ * The gradient's radius is derived from the shift rather than fixed, so the far limb
+ * always lands at the dark end whatever the relief.
+ */
+private fun sphereBrush(
+    base: Int, x: Float, y: Float, r: Float, lx: Float, ly: Float, relief: Float,
+): Brush {
+    val body = Color(base)
+    val shift = HIGHLIGHT_OFFSET * relief
+    return Brush.radialGradient(
+        0f to lerp(body, Color.White, 0.40f * relief),
+        0.45f to body,
+        1f to lerp(body, Color.Black, 0.75f * relief),
+        center = Offset(x + lx * r * shift, y + ly * r * shift),
+        radius = r * (1f + shift) * 1.08f,
+    )
+}
+
+/**
+ * The surface, turned so the body's north pole points the way the zenith does.
+ *
+ * The sprite is baked with north straight up, and the wrist is not. Rolling it here
+ * is the same reasoning as Saturn's rings: what is drawn belongs to the sky, so it
+ * has to turn with the sky rather than sit fixed to the glass.
+ */
+private fun DrawScope.drawSphere(sphere: ImageBitmap, x: Float, y: Float, poleDeg: Float) {
+    val half = sphere.width / 2f
+    rotate(poleDeg, Offset(x, y)) {
+        drawImage(sphere, topLeft = Offset(x - half, y - half))
+    }
+}
+
+/**
+ * Which way round to turn a sprite so its top points at the zenith, in degrees
+ * clockwise. Zero when there is nothing to go on, which leaves north up the screen.
+ */
+private fun poleAngle(offset: DoubleArray, zenith: DoubleArray?): Float {
+    val up = tangentScreenDir(offset, zenith) ?: return 0f
+    return Math.toDegrees(atan2(up[0].toDouble(), -up[1].toDouble())).toFloat()
+}
+
+/**
+ * A corona outside the disc, and the photosphere inside it.
+ *
+ * The corona is brightest against the limb and thins outwards, which is why it is
+ * one gradient rather than the two rings it used to be: a ring has an outer edge and
+ * the real thing does not. Limb darkening is the one feature of the Sun's face the
+ * naked eye picks out through cloud - the disc is measurably dimmer at the edge than
+ * the middle - so it is multiplied over the granulation rather than replacing it.
+ */
+private fun DrawScope.drawSun(
+    x: Float, y: Float, base: Int, r: Float,
+    sphere: ImageBitmap?, offset: DoubleArray, zenith: DoubleArray?,
+) {
     val at = Offset(x, y)
-    drawCircle(Color(ObjectArt.shade(base, 1, 4)), r * 1.3f, at, style = Stroke(1f))
-    drawCircle(Color(ObjectArt.shade(base, 2, 5)), r * 1.15f, at, style = Stroke(1f))
-    drawCircle(Color(ObjectArt.shade(base, 4, 5)), r, at)
-    drawCircle(Color(base), r * 0.65f, at)
+    val body = Color(base)
+    val reach = r * CORONA_REACH
+    val limb = r / reach
+
+    // Three stops past the limb rather than one, because a straight ramp out to
+    // nothing has a visible edge where it lands. This falls off fast and then slowly.
+    drawCircle(
+        Brush.radialGradient(
+            0f to body.copy(alpha = 0.50f),
+            limb to body.copy(alpha = 0.50f),
+            limb + (1f - limb) * 0.28f to body.copy(alpha = 0.13f),
+            1f to body.copy(alpha = 0f),
+            center = at,
+            radius = reach,
+        ),
+        reach,
+        at,
+    )
+
+    if (sphere == null) {
+        drawCircle(
+            Brush.radialGradient(
+                0f to lerp(body, Color.White, 0.72f),
+                0.55f to body,
+                1f to lerp(body, Color.Black, 0.42f),
+                center = at,
+                radius = r,
+            ),
+            r,
+            at,
+        )
+        return
+    }
+
+    // Lit from within, so the shading is concentric rather than thrown from one side.
+    val rr = sphere.width / 2f
+    drawSphere(sphere, x, y, poleAngle(offset, zenith))
+    drawCircle(
+        sphereBrush(SHADING, x, y, rr, 0f, 0f, SUN_RELIEF), rr, at,
+        blendMode = BlendMode.Multiply,
+    )
 }
 
 /**
@@ -183,50 +328,91 @@ private fun DrawScope.drawSun(x: Float, y: Float, base: Int, r: Float) {
  * The bright limb faces the Sun, so the whole thing is oriented by the tangent
  * direction from the Moon towards it. That comes out of the geometry rather than
  * off the screen, which is why it stays right as the wrist rolls.
+ *
+ * With a map of the surface the order goes the other way round from the plain
+ * version: the whole face is drawn, turned down to earthshine, and then the lit part
+ * is drawn again over the top. Multiplying can darken but never brighten, so the
+ * lit side has to be put back rather than left behind.
  */
 private fun DrawScope.drawMoon(
-    x: Float, y: Float, base: Int, r: Float, offset: DoubleArray, sunOffset: DoubleArray,
+    x: Float, y: Float, base: Int, r: Float, sphere: ImageBitmap?,
+    offset: DoubleArray, sunOffset: DoubleArray, zenith: DoubleArray?,
 ) {
-    val dark = ObjectArt.shade(base, 1, 6)
     val dot = offset[0] * sunOffset[0] + offset[1] * sunOffset[1] + offset[2] * sunOffset[2]
     val c = -dot
 
-    // Sun towards the Moon with the along-the-Moon part taken out: what is left
-    // points along the sphere from one to the other. Screen y runs down where up
-    // runs up, which is the only reason for the sign.
-    var bx = (sunOffset[0] - dot * offset[0]).toFloat()
-    var by = -(sunOffset[1] - dot * offset[1]).toFloat()
-    val len = sqrt(bx * bx + by * by)
-    if (len < 0.000001f) {
-        // Sun dead behind or dead in front of the Moon, where there is no bright
-        // limb to point at. The phase is then full or new, so it does not matter.
-        bx = 1f
-        by = 0f
-    } else {
-        bx /= len
-        by /= len
+    // Sun dead behind or dead in front leaves no bright limb to point at, but the
+    // phase is then full or new and the orientation does not show.
+    val toward = tangentScreenDir(offset, sunOffset) ?: floatArrayOf(1f, 0f)
+    val bx = toward[0]
+    val by = toward[1]
+
+    if (sphere == null) {
+        val dark = SolidColor(Color(ObjectArt.shade(base, 1, EARTHSHINE)))
+        val lit = sphereBrush(base, x, y, r, bx, by, MOON_RELIEF)
+
+        // Unlit side drawn faint rather than left out: on a black panel a thin
+        // crescent would be all there is of the Moon, and easy to lose among stars.
+        drawCircle(Color(ObjectArt.shade(base, 1, EARTHSHINE)), r, Offset(x, y))
+        drawPath(halfEllipse(x, y, bx, by, r, r), lit)
+
+        // The terminator bulges past the middle into the dark side when gibbous and
+        // bites into the bright side when a crescent. Same ellipse either way: only
+        // what it is painted with changes, and its width is c.
+        drawPath(halfEllipse(x, y, bx, by, (-c * r).toFloat(), r), if (c >= 0) lit else dark)
+        return
     }
 
-    // Unlit side drawn faint rather than left out: on a black panel a thin crescent
-    // would otherwise be all there is of the Moon, and easy to lose against the stars.
-    drawCircle(Color(dark), r, Offset(x, y))
-    fillHalfEllipse(x, y, bx, by, r, r, Color(base))
+    val rr = sphere.width / 2f
+    val at = Offset(x, y)
+    val pole = poleAngle(offset, zenith)
 
-    // The terminator bulges past the middle into the dark side when gibbous and
-    // bites into the bright side when a crescent. Same ellipse either way: only the
-    // colour it is painted in changes, and its width is c.
-    fillHalfEllipse(x, y, bx, by, (-c * r).toFloat(), r, Color(if (c >= 0) base else dark))
+    drawSphere(sphere, x, y, pole)
+    drawCircle(
+        Color(ObjectArt.shade(SHADING, 1, EARTHSHINE)), rr, at,
+        blendMode = BlendMode.Multiply,
+    )
+    clipPath(litPath(x, y, bx, by, c, rr)) {
+        drawSphere(sphere, x, y, pole)
+        drawCircle(
+            sphereBrush(SHADING, x, y, rr, bx, by, MOON_RELIEF), rr, at,
+            blendMode = BlendMode.Multiply,
+        )
+    }
 }
 
 /**
- * Saturn gets its rings and Jupiter its belts, both lying along the object's own
- * equator. That is taken as square to the local vertical, worked out from where the
- * zenith is in the watch's axes, so the rings roll with the sky rather than with
- * the wrist. A ring pinned to the screen would be wrong as soon as you turned your arm.
+ * The lit part of a disc at phase [c]: the half facing the Sun, with the terminator
+ * ellipse added when gibbous and taken away when a crescent.
+ *
+ * Two convex halves combined rather than one path, because a crescent is concave and
+ * the sweep that draws a half-ellipse cannot make one.
+ */
+private fun litPath(x: Float, y: Float, bx: Float, by: Float, c: Double, r: Float): Path {
+    val facing = halfEllipse(x, y, bx, by, r, r)
+    val terminator = halfEllipse(x, y, bx, by, (-c * r).toFloat(), r)
+    return Path().apply {
+        op(
+            facing,
+            terminator,
+            if (c >= 0) PathOperation.Union else PathOperation.Difference,
+        )
+    }
+}
+
+/**
+ * A planet as a ball lit from wherever the Sun is, which for Mercury and Venus is
+ * often well off to one side and reads as the phase they actually show.
+ *
+ * Saturn gets its rings, which no map of the globe carries, lying along the planet's
+ * own equator. That is taken as square to the local vertical, worked out from where
+ * the zenith is in the watch's axes, so the rings roll with the sky rather than with
+ * the wrist. A ring pinned to the screen would be wrong as soon as you turned your
+ * arm. Jupiter's belts are drawn only when there is no map to show the real ones.
  */
 private fun DrawScope.drawPlanet(
     x: Float, y: Float, obj: SkyObject, base: Int, r: Float, scale: Float,
-    offset: DoubleArray, zenith: DoubleArray?,
+    sphere: ImageBitmap?, offset: DoubleArray, sunOffset: DoubleArray?, zenith: DoubleArray?,
 ) {
     val along = equatorDirection(offset, zenith)
     val ax = along[0]
@@ -243,15 +429,25 @@ private fun DrawScope.drawPlanet(
         )
     }
 
-    drawCircle(Color(base), r, Offset(x, y))
-
-    if (obj.id == "jupiter") {
-        // Two belts either side of the equator, which is as much as any small
-        // telescope shows and as much as there is room for here.
-        val belt = Color(ObjectArt.shade(base, 3, 5))
-        drawBelt(x, y, r, ax, ay, r / 2, belt)
-        drawBelt(x, y, r, ax, ay, -r / 2, belt)
+    val toward = tangentScreenDir(offset, sunOffset) ?: floatArrayOf(0f, 0f)
+    if (sphere == null) {
+        drawCircle(sphereBrush(base, x, y, r, toward[0], toward[1], 1f), r, Offset(x, y))
+        if (obj.id == "jupiter") {
+            // Two belts either side of the equator, which is as much as any small
+            // telescope shows and as much as there is room for here.
+            val belt = Color(ObjectArt.shade(base, 3, 5))
+            drawBelt(x, y, r, ax, ay, r / 2, belt)
+            drawBelt(x, y, r, ax, ay, -r / 2, belt)
+        }
+        return
     }
+
+    val rr = sphere.width / 2f
+    drawSphere(sphere, x, y, poleAngle(offset, zenith))
+    drawCircle(
+        sphereBrush(SHADING, x, y, rr, toward[0], toward[1], 1f), rr, Offset(x, y),
+        blendMode = BlendMode.Multiply,
+    )
 }
 
 /**
@@ -273,30 +469,40 @@ private fun DrawScope.drawBelt(
 }
 
 /**
+ * Which way [other] lies from the object, as a unit direction on the screen: the
+ * part of [other] square to the object, with screen y running down. Null when the
+ * two lie along the same line and there is no direction to be had.
+ *
+ * Both the Sun, which orients the phase and the lighting, and the zenith, which
+ * orients the poles and the rings, are wanted this way round.
+ */
+private fun tangentScreenDir(offset: DoubleArray, other: DoubleArray?): FloatArray? {
+    if (other == null) return null
+    val dot = offset[0] * other[0] + offset[1] * other[1] + offset[2] * other[2]
+    val vx = (other[0] - dot * offset[0]).toFloat()
+    val vy = -(other[1] - dot * offset[1]).toFloat()
+    val len = sqrt(vx * vx + vy * vy)
+    if (len < 0.000001f) return null
+    return floatArrayOf(vx / len, vy / len)
+}
+
+/**
  * Screen direction of the object's equator: square to the way the zenith lies from
  * it. Falls back to across the screen when there is nothing to go on.
  */
 private fun equatorDirection(offset: DoubleArray, zenith: DoubleArray?): FloatArray {
-    if (zenith == null) return floatArrayOf(1f, 0f)
-    val dot = offset[0] * zenith[0] + offset[1] * zenith[1] + offset[2] * zenith[2]
-    val upX = (zenith[0] - dot * offset[0]).toFloat()
-    val upY = -(zenith[1] - dot * offset[1]).toFloat()
-    val len = sqrt(upX * upX + upY * upY)
-    if (len < 0.000001f) return floatArrayOf(1f, 0f)
-    // Square to the local vertical.
-    return floatArrayOf(-upY / len, upX / len)
+    val up = tangentScreenDir(offset, zenith) ?: return floatArrayOf(1f, 0f)
+    return floatArrayOf(-up[1], up[0])
 }
 
 /**
- * Half an ellipse as a filled path: semi-axis [ax] along ([bx], [by]) and [r]
- * across it, closed along the diameter. [ax] may be negative, which puts the half
- * on the other side, as the terminator needs.
- *
- * Two convex halves rather than one lune, because a crescent is concave.
+ * Half an ellipse as a closed path: semi-axis [ax] along ([bx], [by]) and [r] across
+ * it, closed along the diameter. [ax] may be negative, which puts the half on the
+ * other side, as the terminator needs.
  */
-private fun DrawScope.fillHalfEllipse(
-    x: Float, y: Float, bx: Float, by: Float, ax: Float, r: Float, color: Color,
-) {
+private fun halfEllipse(
+    x: Float, y: Float, bx: Float, by: Float, ax: Float, r: Float,
+): Path {
     val px = -by
     val py = bx
     val path = Path()
@@ -309,7 +515,7 @@ private fun DrawScope.fillHalfEllipse(
         if (i == 0) path.moveTo(vx, vy) else path.lineTo(vx, vy)
     }
     path.close()
-    drawPath(path, color)
+    return path
 }
 
 /**

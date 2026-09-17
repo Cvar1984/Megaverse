@@ -431,6 +431,40 @@ seven — so they are symbols, and one constant says how loud. Their sizes relat
 each other are the meaningful part: the Sun largest, then the Moon, then the planets
 by the room their features need, then the stars scaled by magnitude.
 
+**They are photographs of the real surfaces, wrapped onto a sphere.** The maps are
+flat rectangles — longitude across, latitude down — and the screen wants a disc, so
+each is warped once into a sprite the exact size it will be drawn at and cached.
+The warp is the orthographic projection of a sphere: for every pixel of the disc,
+work out which point of the surface faces you there, and sample the map at its
+longitude and latitude. Drawing a planet is then drawing one bitmap.
+
+This is deliberately not a shader. The Milky Way (section 7) has to be one,
+because it covers the screen and changes with every wrist movement; a planet is
+twenty pixels across and its face does not change, so baking it once costs nothing
+per frame and works on every watch the app runs on rather than only Wear OS 4.
+
+The map is scaled down near the sprite's own size before warping. A 256-wide map
+across a twenty-pixel disc means one output pixel covers a dozen texels, and picking
+one of the dozen gives a speckled mess; averaging them first is what makes Jupiter's
+belts read as belts. Rotation and libration are not modelled — a whole turn of
+Jupiter moves the belts by less than a pixel at this size. The Moon needs no choice
+at all: it is locked to us, so the near side its map is centred on is the side
+genuinely facing the watch.
+
+**Lighting is multiplied over the surface**, as a radial gradient whose bright spot
+sits towards wherever the Sun is on screen, falling away to a dark limb. Mercury and
+Venus therefore take on the phase they actually show without any extra geometry. The
+Moon gets a third of that relief, and that is not a matter of taste: its dust
+backscatters, which is why a full Moon reads as a flat disc rather than a shaded
+ball. The Sun is lit from within instead, so its shading is concentric — limb
+darkening, the one feature of its face the naked eye picks out through cloud — and
+its corona is a single gradient thinning outwards, so there is no ring edge where
+the glow ends.
+
+Each sprite is turned so the body's north pole points the way the zenith does, for
+the same reason the rings are: what is drawn belongs to the sky, so it has to roll
+with the sky rather than sit fixed to the glass.
+
 **The Moon's phase** comes from the angle between the Moon and the Sun as seen from
 here. Both are unit vectors, so their dot product is the cosine of the elongation
 and the lit fraction follows directly: $k = (1 - \hat{m}\cdot\hat{s})/2$. What the
@@ -444,12 +478,18 @@ the screen, which is why it stays right as the wrist rolls. The unlit side is dr
 faint rather than left out: on a black panel a thin crescent would otherwise be all
 there is of the Moon, and easy to lose against the stars.
 
-Two convex half-ellipses rather than one lune, because a crescent is concave.
+Two convex half-ellipses rather than one lune, because a crescent is concave. Over a
+photograph the order goes the other way round: the whole face is drawn, turned down
+to earthshine, and then the lit part is drawn again over the top. Multiplying can
+darken but never brighten, so the lit side has to be put back rather than left
+behind.
 
-**Saturn's rings and Jupiter's belts** lie along the object's own equator, taken as
-square to the local vertical and worked out from where the zenith falls in the watch
-axes — so they roll with the sky rather than with the wrist. A ring pinned to the
-screen would be wrong as soon as you turned your arm.
+**Saturn's rings** lie along the planet's own equator, taken as square to the local
+vertical and worked out from where the zenith falls in the watch axes — so they roll
+with the sky rather than with the wrist. A ring pinned to the screen would be wrong
+as soon as you turned your arm. They are drawn rather than sampled because a map of
+the globe does not carry them. Jupiter's belts used to be drawn the same way and are
+now only the fallback: its map has the real ones.
 
 ## 10. Rise and set
 
@@ -607,3 +647,10 @@ panorama](https://www.eso.org/public/images/eso0932a/), used under
 2048x1024. Credit: **ESO/S. Brunier**. Stellarium takes the same approach with Axel
 Mellinger's panorama, which is not what is used here - that one is in Stellarium by
 the author's own permission rather than under a licence this could rely on.
+
+The surface maps for the Sun, Moon and planets are [Solar System Scope
+textures](https://www.solarsystemscope.com/textures/), used under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and downsampled to 256x128
+each - 48 KB for all seven. Credit: **Solar System Scope**. Both credits are shown
+at the foot of the settings list in the app, because CC BY asks for them to stay
+with the image and be readable where it is used.

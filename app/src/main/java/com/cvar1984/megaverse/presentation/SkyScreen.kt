@@ -144,7 +144,7 @@ fun SkyScreen(target: SkyObject?, state: SkyState, onSettings: () -> Unit) {
                 !state.locationAllowed -> "Location permission\nneeded"
                 state.location == null ->
                     if (state.locating) "Acquiring fix..." else "Locating..."
-                state.frame == null || state.sky == null -> "Waiting for sensors..."
+                state.frame == null || state.sky == null -> "Waiting for sensors...\nShake your device"
                 else -> null
             }
         }
@@ -303,12 +303,12 @@ private fun SkyCanvas(target: SkyObject?, state: SkyState, round: Boolean) {
 
         if (target == null) {
             drawWholeSky(
-                snapshot, frame, view, scale, sunOffset, zenith,
+                context, snapshot, frame, view, scale, sunOffset, zenith,
                 snapshot.identify(frame)?.obj,
             )
         } else {
             snapshot.find(target)?.let {
-                drawTarget(it, frame, view, scale, round, sunOffset, zenith)
+                drawTarget(context, it, frame, view, scale, round, sunOffset, zenith)
             }
         }
 
@@ -376,6 +376,7 @@ private fun DrawScope.drawCardinals(
  * underfoot without losing the colour and the face that identify them.
  */
 private fun DrawScope.drawWholeSky(
+    context: android.content.Context,
     snapshot: SkySnapshot,
     frame: FloatArray,
     view: FloatArray,
@@ -398,7 +399,8 @@ private fun DrawScope.drawWholeSky(
         // is still placed correctly, and the altitude in the readout is what says it
         // is under you.
         drawSkyObject(
-            px, py, placed.obj, ObjectArt.color(placed.obj), scale, offset, sunOffset, zenith
+            context, px, py, placed.obj, ObjectArt.color(placed.obj), scale,
+            offset, sunOffset, zenith,
         )
 
         // A ring round the one being named underneath, so there is no doubt which
@@ -449,6 +451,7 @@ private fun DrawScope.drawCrosshair(view: FloatArray, scale: Float) {
  * pins to the edge with a chevron pointing further the way to move.
  */
 private fun DrawScope.drawTarget(
+    context: android.content.Context,
     placed: Placed,
     frame: FloatArray,
     view: FloatArray,
@@ -516,7 +519,8 @@ private fun DrawScope.drawTarget(
     }
 
     drawSkyObject(
-        dotX, dotY, placed.obj, ObjectArt.color(placed.obj), scale, offset, sunOffset, zenith
+        context, dotX, dotY, placed.obj, ObjectArt.color(placed.obj), scale,
+        offset, sunOffset, zenith,
     )
 
     // One chevron, along the line the object lies on. That is the same line the
