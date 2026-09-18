@@ -10,8 +10,20 @@ with no network, no phone, and no chart to orient yourself against first.
 
 A port of [Miniverse](https://github.com/Cvar1984/Miniverse) to Wear OS.
 
+## Demo
+
+![Travelling through a day with the crown](Screenshot/demo.gif)
+
+Ten seconds of the crown moving the sky through a day and back. The amber line is
+the time being shown; the Sun, the ecliptic and its date marks all move with it.
+
+[The full walkthrough](Screenshot/megaverse-demo.mp4) is 58 seconds and covers the
+rest: the overlays, the settings, time travel by button and by crown, the turn-and-
+tilt guidance, and the calendar. Both were recorded on a Wear OS 4 emulator.
+
 ## Contents
 
+- [Demo](#demo)
 - [How it works](#how-it-works)
 - [Screens](#screens)
 - [Time travel](#time-travel)
@@ -166,6 +178,8 @@ at all. Covering any distance means stepping the size up first.
 There is no keyboard worth the name on a watch, and the useful moves are relative
 anyway: an hour on, a day back, this time next week. So the arrows say what you
 actually mean, and the step cycles through the scales those questions come at.
+
+![The time screen](Screenshot/time.png)
 
 **Or just turn the crown.** A rotating crown or bezel moves the sky by the same
 step, straight from the sky screen with nothing to open first — which is where it
@@ -539,7 +553,7 @@ holds, so only these two lines drop out and the screen says `Straight up/down`.
 
 ## 9. Drawing the objects
 
-![Sun, Moon and stars](Screenshot/objects.png)
+![The Sun, Saturn, Venus and Mercury from their own surface maps](Screenshot/objects.png)
 
 None of the discs is a true angular size — the real Sun is half a degree across, not
 seven — so they are symbols, and one constant says how loud. Their sizes relative to
