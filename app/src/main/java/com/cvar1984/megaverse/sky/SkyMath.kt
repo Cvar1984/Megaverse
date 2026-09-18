@@ -6,6 +6,7 @@ import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.sqrt
 import kotlin.math.sin
 import kotlin.math.tan
 
@@ -25,6 +26,24 @@ object SkyMath {
     fun dasin(x: Double) = Math.toDegrees(asin(x.coerceIn(-1.0, 1.0)))
     fun dacos(x: Double) = Math.toDegrees(acos(x.coerceIn(-1.0, 1.0)))
     fun datan2(y: Double, x: Double) = Math.toDegrees(atan2(y, x))
+
+    /**
+     * The vector at right angles to both, and the same vector scaled to unit length.
+     *
+     * Two callers build a frame out of a pole and a seed direction this way - the
+     * great circles of the ecliptic and the lunar path, and the galactic axes - so
+     * the pair lives here rather than once in each.
+     */
+    fun cross(a: DoubleArray, b: DoubleArray) = doubleArrayOf(
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+    fun normalise(v: DoubleArray): DoubleArray {
+        val len = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+        return DoubleArray(3) { v[it] / len }
+    }
 
     /** Normalise degrees to [0,360). */
     fun norm360(deg: Double): Double {

@@ -143,13 +143,6 @@ class SkyState(private val context: Context) : SensorEventListener {
         private set
 
     /**
-     * The sidereal time the equatorial grid is pinned to while it is being held
-     * still. A new position drops the pin, since it makes the old reading wrong.
-     */
-    var gridLst: Double? = null
-        private set
-
-    /**
      * How far the sky being shown is from the present, in milliseconds. Zero is now,
      * which is what it is almost always set to.
      *
@@ -180,14 +173,19 @@ class SkyState(private val context: Context) : SensorEventListener {
     /**
      * Moves the sky to [offsetMillis] from now, clamped to the range the maths is
      * good for.
-     *
-     * Dropping the pinned sidereal time is part of travelling, not an extra: the pin
-     * holds the equatorial grid still against a moment that has just been left, and
-     * keeping it would leave the grid describing a sky no longer on screen.
      */
     fun travel(offsetMillis: Long) {
         timeOffsetMillis = offsetMillis.coerceIn(-TRAVEL_LIMIT_MILLIS, TRAVEL_LIMIT_MILLIS)
-        gridLst = null
+
+        // Worked out here and now rather than left to the one-second tick that keeps
+        // the real sky up to date. That tick is right for a sky that moves a
+        // fifteenth of a degree in a second and wrong for one being dragged by a
+        // wrist: a turn of the crown would change this number immediately and move
+        // nothing on screen until the tick came round, so a spin arrived as a single
+        // jump up to a second late with every position in between thrown away. That
+        // is the whole of what made travelling feel slow, and it was never the size
+        // of the step.
+        refreshSky()
     }
 
     /**
@@ -324,24 +322,19 @@ class SkyState(private val context: Context) : SensorEventListener {
     }
 
     private fun apply(fix: Location) {
-        val first = location == null
         location = fix
 
         // Declination is measured east-positive, the same convention the frame
-        // rotation expects. Taken on the first fix and then left alone unless the
-        // horizon frame is set to follow the position: the whole drawn sky hangs
-        // off it, and a reference that stays put is easier to read against.
-        if (first || Settings.dynAzimuth) {
-            declination = GeomagneticField(
-                fix.latitude.toFloat(), fix.longitude.toFloat(), fix.altitude.toFloat(), fix.time
-            ).declination.toDouble()
-        }
+        // rotation expects, and it is taken from every fix. It is a property of
+        // where you are standing: holding on to the one worked out where you last
+        // stood does not keep the sky steady, it aims the whole of it slightly wrong.
+        declination = GeomagneticField(
+            fix.latitude.toFloat(), fix.longitude.toFloat(), fix.altitude.toFloat(), fix.time
+        ).declination.toDouble()
 
-        // Stood somewhere else now, so nothing worked out for the old place still
-        // answers: the catalogue positions, and the sidereal time the held-still
-        // equatorial grid is pinned to.
+        // Stood somewhere else now, so the catalogue positions worked out for the
+        // old place no longer answer.
         sky = null
-        gridLst = null
     }
 
     /**
@@ -382,8 +375,5 @@ class SkyState(private val context: Context) : SensorEventListener {
             shown, timeOffsetMillis, jd, lstDeg, lat,
             SkyMath.horizontalToEnu(sunAltAz[1], sunAltAz[0]), placed,
         )
-
-        // Pinned on the first reading after a fix, and held until the next one.
-        if (gridLst == null) gridLst = lstDeg
     }
 }

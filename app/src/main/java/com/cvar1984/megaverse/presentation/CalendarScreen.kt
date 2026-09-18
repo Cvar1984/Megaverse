@@ -39,7 +39,6 @@ import kotlin.math.roundToInt
 private const val DAYS = 14
 
 private val DayLabel = Color(0xFFBFC8FF)
-private val HeadLabel = Color(0xFF8A8A8A)
 private val SunLabel = Color(0xFFFFD24A)
 private val MoonLabel = Color(0xFFCFCFCF)
 
@@ -162,7 +161,7 @@ private fun RowScope.Head(text: String) = Text(
     text,
     modifier = Modifier.weight(1f),
     fontSize = 9.sp,
-    color = HeadLabel,
+    color = DimText,
     textAlign = TextAlign.End,
     maxLines = 1,
 )

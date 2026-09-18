@@ -14,6 +14,7 @@ A port of [Miniverse](https://github.com/Cvar1984/Miniverse) to Wear OS.
 
 - [How it works](#how-it-works)
 - [Screens](#screens)
+- [Time travel](#time-travel)
 - [Settings](#settings)
 - [The maths](#the-maths)
   - [1. Time](#1-time)
@@ -148,6 +149,90 @@ A body that never sets says `up all day` across both columns rather than filling
 them with dashes, which would read as missing data instead of as the Sun not
 setting.
 
+## Time travel
+
+Under **Settings → Time**. Two arrows and a step size that cycles between a second,
+a minute, ten minutes, an hour, six hours, a day, a week and thirty days; the middle
+button is the step, so the three controls are the three things there are to say -
+back, by this much, forward. **Now** returns.
+
+It starts on **one second**, the finest there is, because landing exactly on a time
+is the harder of the two things to do and the one worth making easy. A second of sky
+is fifteen arcseconds — far under a pixel — so at that step nothing on the sky
+visibly moves, which is why the time carries its seconds on both screens: the
+readout is the only thing that moves, and the only sign the crown is doing anything
+at all. Covering any distance means stepping the size up first.
+
+There is no keyboard worth the name on a watch, and the useful moves are relative
+anyway: an hour on, a day back, this time next week. So the arrows say what you
+actually mean, and the step cycles through the scales those questions come at.
+
+**Or just turn the crown.** A rotating crown or bezel moves the sky by the same
+step, straight from the sky screen with nothing to open first — which is where it
+earns its keep, because you watch the Moon climb as you turn rather than setting a
+time and then going to look. The step is shared: whatever you last chose is what a
+click is worth wherever you turn it.
+
+It is not rate limited, and a turn runs on as far as you care to turn it. Every
+detent that arrives is spent, including several in one event when a flick delivers
+them together, so the sky keeps up with the hand.
+
+**The sky is worked out the moment you move it**, not on the next tick of the clock
+that keeps the real sky current. That tick is right for a sky drifting a fiftieth of
+a degree a second and wrong for one being dragged by a wrist: a turn would change
+the time immediately and move nothing on screen until the tick came round, so a spin
+arrived as a single jump up to a second late with every position in between thrown
+away. Fixing that is what made travelling feel continuous rather than slow, and it
+was never the size of the step.
+
+**One click is exactly one step**, and that took measuring. Android reports a rotary
+event as the number of pixels it would have scrolled a list by — the raw detent
+multiplied by the view's own scroll factor, so a different number on every watch,
+and nothing in the API says what one click is worth. It arrives as 1.77 pixels on a
+Wear emulator at this density, so the threshold sits just under that, at 1.5. What
+is left over is then dropped rather than carried into the next click: carrying it
+earns a free extra step every sixth one, which measured as twenty clicks moving the
+sky twenty-four hours. `DETENT_PIXELS` in `TimeScreen.kt` is the calibration knob if
+a real crown feels eager or slow.
+
+Rotary needs focus, and it is `Modifier.requestFocusOnHierarchyActive` that gives it
+to whichever screen is the live one — so coming back out of the settings list hands
+the crown back to the sky underneath. Requesting focus once on the way in instead
+would leave the crown dead afterwards on a screen that looks perfectly alive.
+
+Rotary is its own input stream, so none of it touches the sideways drag that
+dismisses a screen.
+
+Everything follows it. The objects, both grids, the ecliptic and lunar paths, the
+identification under the crosshair and the calendar's first day are all worked out
+for the time you have moved to, because there was only ever one place the clock was
+read for the astronomy. The watch still points where it is really pointing - time
+travel moves the sky, not your arm - so the turn-and-tilt guidance tells you where
+to aim to see what will be there.
+
+While the sky is not the present, the date and time it *is* showing sit in amber
+along the top of the sky screen. A sky quietly set to last Tuesday, with everything
+in the wrong place and nothing saying why, is the one way this could make the app
+look broken.
+
+The offset is not a setting and is not saved. It is a place you have gone rather
+than a preference you hold, so it lives as long as the app does and no longer.
+
+Nothing stops you. The one bound is ten million years either way, and it is where
+the arithmetic gives out rather than where the answers do: a `Long` of milliseconds
+wraps eventually, and an offset that wrapped would throw the sky to the far side of
+the epoch between one detent and the next, which reads as a crash rather than as a
+limit. So it saturates, thousands of times short of where `Long` gives out. At
+thirty days a click and fifty clicks a second — faster than a wrist turns — that is
+four weeks of unbroken spinning away.
+
+Where the *answers* give out is a different question and a much nearer one. The
+planetary elements are Schlyter's, stated for 1900 to 2100, and the lunar series is
+an abbreviated one that drifts as you leave its epoch, so a reading a century out is
+already worth less than a reading tomorrow. That is a thing to know about the number
+on screen, not a reason to stop a wrist mid-turn — so it is written down here rather
+than enforced. The maths stays finite all the way to the limit, which is tested.
+
 ## Settings
 
 Hold anywhere on a sky screen. Every setting changes what is on the screen behind,
@@ -164,15 +249,20 @@ back and a full-screen clickable would swallow it.
 
 | Setting | Values | Default |
 |---|---|---|
+| Time | Opens [time travel](#time-travel) | now |
 | Horizon Grid | Off · 60 · 45 · 30 · 15 · 10 degrees | Off |
 | Equatorial Grid | Off · 60 · 45 · 30 · 15 · 10 degrees | Off |
 | Constellations | Off · On | Off |
 | Milky Way | Off · On | Off |
 | Sun Path | Off · Line · Line + dates | Off |
 | Moon Path | Off · Line · Line + dates | Off |
-| Equatorial Motion | Held still · Turns with sky | Held still |
-| Azimuth Motion | Held still · Follows position | Held still |
 | Update Location | One fix only · every 5 / 15 / 30 / 60 min | One fix only |
+
+**Time** is the one entry here that is not a stored preference: it opens a screen
+rather than stepping a value, and what it is set to is forgotten when the app stops.
+It sits first, and above the rest rather than among them, but it wears its value the
+way they all do — so a sky that has been moved says so from the menu as well as from
+the sky itself.
 
 The Milky Way is drawn per pixel on the GPU, which needs a shader the system
 software only provides from Wear OS 4. Below that the setting says so rather than
@@ -182,12 +272,33 @@ Spacings that come to a whole number of hours say so. The sky turns $360^\circ$ 
 24 hours, so $15^\circ$ is one hour of it and the grid divides the sky into
 hour-wide cells.
 
-Everything starts off and held still. The grids are there when you ask for them,
-and a grid that stays put is easier to read against than one that drifts.
+Everything starts off. The grids are there when you ask for them.
 
-Azimuth Motion has nothing but position updates to follow, since the horizon frame
-has no clock in it. With location updates off it says `On - no updates` rather than
-claiming to follow something that never arrives.
+### Two settings that used to be here
+
+**Equatorial Motion** offered to hold the RA/Dec grid still against one reading of
+sidereal time instead of letting it turn with the sky. It is gone; the grid always
+turns. Holding it still stopped it being an equatorial grid at all — the lines are
+the sky's own right ascension and declination, so pinned to a sidereal time you have
+left they are off by fifteen degrees an hour and no longer label anything. What it
+bought was stillness against a drift of about one pixel a minute: the catalogue is
+worked out every five seconds, which is a fiftieth of a degree of sky. It traded
+being correct for smoothing out something too small to see, and it was the default.
+
+Time travel settled it. Moved off the present the pin has to be dropped or the grid
+is wildly wrong, so both choices already behaved identically there — and a setting
+whose correct branch is forced in the one case that matters is not a setting.
+Stellarium offers no equivalent, for the same reason: a grid is a coordinate frame,
+and a frame that does not track what it names is a pattern of lines.
+
+**Azimuth Motion** was never a grid setting despite the name. It gated whether the
+magnetic declination was worked out again when a new position fix arrived. At the
+default — `One fix only` — no further fixes arrive, so it did nothing, which its own
+label admitted by reading `On - no updates`. With updates switched on it did do
+something, and that something was wrong: declination is a function of where you are
+standing, so keeping the one from where you last stood does not hold the sky steady,
+it aims all of it slightly off. Inert by default and incorrect otherwise, so it is
+gone and every fix now sets the declination.
 
 The display is held awake while a sky screen is up.
 
@@ -351,9 +462,13 @@ Neither depends on the clock, on where you stand, or on how the watch is held, s
 the points are worked out once per spacing and kept. Only the rotation into the
 watch's axes is redone per frame.
 
-Sidereal time is the only thing in the equatorial grid that moves, so pinning it to
-one reading holds that grid still. A new position drops the pin, since it makes the
-old reading wrong.
+Sidereal time is the only thing in the equatorial grid that moves, and it is always
+the sidereal time being shown — including a time travelled to. That is what makes it
+an equatorial grid rather than a pattern of lines: the cells are the sky's own right
+ascension and declination, and they have to move with the sky they name. The horizon
+grid is fixed to the ground and does not move with it; travelling six hours swings
+the blue grid right across the green one, which is the whole difference between the
+two frames made visible.
 
 **Constellations.** Stick figures for all twelve of the zodiac, which is what the
 ecliptic runs through, plus the bright ones off it that most people can already
@@ -526,8 +641,10 @@ with no crossing found.
 | `sky/RiseSet.kt` | Horizon crossings by sampling the day |
 | `presentation/SkyScreen.kt` | The sky screen: both modes, overlays, chrome |
 | `presentation/SkyDraw.kt` | Colour, size and face of each body; Moon phase |
-| `presentation/SkyState.kt` | Sensors, position, and the catalogue snapshot |
+| `presentation/PlanetTexture.kt` | Surface maps warped onto spheres, and cached |
+| `presentation/SkyState.kt` | Sensors, position, time offset, catalogue snapshot |
 | `presentation/CalendarScreen.kt` | The Sun and Moon calendar |
+| `presentation/TimeScreen.kt` | Moving the sky off the present |
 | `presentation/Settings.kt` | Persisted choices, cached in Compose state |
 | `presentation/MainActivity.kt` | Entry point, navigation, menus |
 | `src/test/` | Unit tests |
@@ -541,7 +658,9 @@ density and catalogue size.
   rotates them. The point count grows as the spacing shrinks.
 - **The catalogue** is worked out every few seconds and held, since the sky moves
   well under a pixel in that time. Only the projection is redone per frame, and the
-  cache is dropped when your position changes.
+  cache is dropped when your position changes or the time you are looking at does.
+  A snapshot carries the offset it was built at, so a jump backwards forces a
+  rebuild rather than reading as a snapshot from the future and so as one not due.
 - **The paths and their dates** move slower still: the ecliptic never moves, and the
   lunar node and the date marks are rebuilt once a day.
 - **Position** is event-driven. A cached fix is used immediately; a fresh one is

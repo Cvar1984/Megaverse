@@ -57,15 +57,8 @@ object PlanetTexture {
      */
     private val sprites = HashMap<Long, ImageBitmap>()
 
-    /** The smallest disc worth warping. Below this it is a coloured dot anyway. */
-    private const val MIN_DIAMETER = 5
-
-    /**
-     * The sphere for [obj] at [diameter] pixels across, or null if there is no map
-     * for it or it would be too small to show one.
-     */
+    /** The sphere for [obj] at [diameter] pixels across, or null if it has no map. */
     fun sphere(context: Context, obj: SkyObject, diameter: Int): ImageBitmap? {
-        if (diameter < MIN_DIAMETER) return null
         val res = maps[obj.id] ?: return null
         val key = (res.toLong() shl 20) or diameter.toLong()
         return sprites[key] ?: bake(context, res, diameter).also { sprites[key] = it }

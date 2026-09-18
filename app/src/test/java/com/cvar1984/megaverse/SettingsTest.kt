@@ -34,8 +34,6 @@ class SettingsTest {
         assertEquals(false, Settings.milkyWay)
         assertEquals(0, Settings.ecliptic)
         assertEquals(0, Settings.moonPath)
-        assertEquals(false, Settings.dynEquatorial)
-        assertEquals(false, Settings.dynAzimuth)
         assertEquals(0, Settings.locationMinutes)
     }
 
@@ -93,24 +91,6 @@ class SettingsTest {
     }
 
     @Test
-    fun azimuthMotionSaysWhenItHasNothingToFollow() {
-        // It has nothing but position updates to follow, since the horizon frame
-        // has no clock in it. Switched on with the fixes off, it must say so rather
-        // than read as on and do nothing.
-        val azimuth = Settings.specs.first { it.key == "dynAzimuth" }
-        val location = Settings.specs.first { it.key == "locationMinutes" }
-
-        assertEquals("Held still", Settings.label(azimuth))
-
-        Settings.cycle(azimuth)
-        assertEquals("On - no updates", Settings.label(azimuth))
-
-        Settings.cycle(location)
-        assertEquals("Follows position", Settings.label(azimuth))
-        assertEquals("Every 5 min", Settings.label(location))
-    }
-
-    @Test
     fun oneFixOnlyIsTheDefaultForLocation() {
         // A fix costs battery, so nothing is asked for until it is asked for.
         val location = Settings.specs.first { it.key == "locationMinutes" }
@@ -123,16 +103,11 @@ class SettingsTest {
         assertEquals("Off", Settings.label(constellations))
         Settings.cycle(constellations)
         assertEquals("On", Settings.label(constellations))
-
-        val equatorial = Settings.specs.first { it.key == "dynEquatorial" }
-        assertEquals("Held still", Settings.label(equatorial))
-        Settings.cycle(equatorial)
-        assertEquals("Turns with sky", Settings.label(equatorial))
     }
 
     @Test
     fun everySettingHasATitleAndAStorageKey() {
-        assertEquals(9, Settings.specs.size)
+        assertEquals(7, Settings.specs.size)
         assertEquals(Settings.specs.size, Settings.specs.map { it.key }.toSet().size)
         for (spec in Settings.specs) {
             assertTrue(spec.key.isNotBlank())
@@ -166,8 +141,6 @@ class SettingsTest {
         val cases = listOf(
             "constellations" to { Settings.constellations },
             "milkyWay" to { Settings.milkyWay },
-            "dynEquatorial" to { Settings.dynEquatorial },
-            "dynAzimuth" to { Settings.dynAzimuth },
         )
         for ((key, read) in cases) {
             val spec = Settings.specs.first { it.key == key }

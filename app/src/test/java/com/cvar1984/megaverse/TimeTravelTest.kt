@@ -155,9 +155,11 @@ class TimeTravelTest {
 
     @Test
     fun theLabelChangesUnitWhereTheUnitRunsOut() {
-        // The two boundaries between the three forms. A minute short of each, the
-        // smaller unit is still used; at each, the larger one takes over.
-        assertEquals("+59 min", travelLabel(59 * 60_000L))
+        // Every boundary between the five forms. A unit short of each, the smaller
+        // unit is still used; at each, the larger one takes over.
+        assertEquals("+59 s", travelLabel(59_000L))
+        assertEquals("+1 min 0 s", travelLabel(60_000L))
+        assertEquals("+59 min 0 s", travelLabel(59 * 60_000L))
         assertEquals("+1 h 0 min", travelLabel(hour))
         assertEquals("+47 h 0 min", travelLabel(47 * hour))
         assertEquals("+2 d 0 h", travelLabel(48 * hour))
@@ -170,6 +172,7 @@ class TimeTravelTest {
         // A label that said "+1 h" for anything inside the hour would be useless for
         // stepping ten minutes at a time, which is the smallest step there is.
         assertEquals("+1 h 30 min", travelLabel(hour + 30 * 60_000L))
+        assertEquals("+2 min 5 s", travelLabel(125_000L))
         assertEquals("-3 d 6 h", travelLabel(-(3 * day + 6 * hour)))
     }
 
@@ -210,9 +213,12 @@ class TimeTravelTest {
     }
 
     @Test
-    fun aSubMinuteOffsetStillReadsAsAnOffset() {
-        // Nothing steps by less than ten minutes, but "+0 min" is at least honest
-        // where "now" would be a lie about a sky that has been moved.
-        assertEquals("+0 min", travelLabel(30_000L))
+    fun theFinestStepIsOneTheLabelCanShow() {
+        // The default step is a second, so the first click has to read as something
+        // other than "now" or the crown looks dead. It used to round to "+0 min".
+        assertEquals(1_000L, STEPS[DEFAULT_STEP].second)
+        assertEquals("+1 s", travelLabel(STEPS[DEFAULT_STEP].second))
+        assertEquals("-1 s", travelLabel(-STEPS[DEFAULT_STEP].second))
+        assertEquals("+30 s", travelLabel(30_000L))
     }
 }

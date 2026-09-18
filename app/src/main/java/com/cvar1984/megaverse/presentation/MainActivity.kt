@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,14 +73,16 @@ fun SkyApp() {
     AppScaffold {
         SwipeDismissableNavHost(navController, startDestination = "root") {
             composable("root") {
-                Menu("Locate Sky Object") {
-                    item("Show All") { navController.toSky(SHOW_ALL) }
-                    item("Sun") { navController.toSky("sun") }
-                    item("Moon") { navController.toSky("moon") }
-                    item("Planets") { navController.navigate("list/planets") }
-                    item("Stars") { navController.navigate("list/stars") }
-                    item("Calendar") { navController.navigate("calendar") }
-                }
+                Menu(
+                    "Locate Sky Object",
+                    listOf(
+                        "Show All" to { navController.toSky(SHOW_ALL) },
+                        "Sun" to { navController.toSky("sun") },
+                        "Moon" to { navController.toSky("moon") },
+                        "Planets" to { navController.navigate("list/planets") },
+                        "Stars" to { navController.navigate("list/stars") },
+                    ),
+                )
             }
             composable(
                 "list/{kind}",
@@ -89,11 +90,12 @@ fun SkyApp() {
             ) { entry ->
                 val planets = entry.arguments?.getString("kind") == "planets"
                 val type = if (planets) SkyType.PLANET else SkyType.STAR
-                Menu(if (planets) "Planets" else "Stars") {
-                    for (obj in SkyCatalog.byType(type)) {
-                        item(obj.name) { navController.toSky(obj.id) }
-                    }
-                }
+                Menu(
+                    if (planets) "Planets" else "Stars",
+                    SkyCatalog.byType(type).map { obj ->
+                        obj.name to { navController.toSky(obj.id) }
+                    },
+                )
             }
             composable(
                 "sky/{id}",
@@ -108,7 +110,11 @@ fun SkyApp() {
             composable("calendar") { CalendarScreen(state) }
             composable("time") { TimeScreen(state) }
             composable("settings") {
-                SettingsScreen(state) { navController.navigate("time") }
+                SettingsScreen(
+                    state,
+                    onTime = { navController.navigate("time") },
+                    onCalendar = { navController.navigate("calendar") },
+                )
             }
         }
     }
@@ -117,20 +123,11 @@ fun SkyApp() {
 private fun NavController.toSky(id: String) = navigate("sky/$id")
 
 /**
- * A list of things to pick, in the one shape every menu in the app uses. Items are
- * declared through [MenuScope] so a caller writes the label and what it does and
- * nothing else.
+ * A list of things to pick, in the one shape every menu in the app uses: a label and
+ * what it does, per row.
  */
-class MenuScope internal constructor() {
-    internal val entries = mutableListOf<Pair<String, () -> Unit>>()
-    fun item(label: String, onClick: () -> Unit) {
-        entries.add(label to onClick)
-    }
-}
-
 @Composable
-private fun Menu(title: String, content: MenuScope.() -> Unit) {
-    val scope = MenuScope().apply(content)
+private fun Menu(title: String, entries: List<Pair<String, () -> Unit>>) {
     val listState = rememberTransformingLazyColumnState()
     val spec = rememberTransformationSpec()
     ScreenScaffold(scrollState = listState) { contentPadding ->
@@ -141,8 +138,8 @@ private fun Menu(title: String, content: MenuScope.() -> Unit) {
                     transformation = SurfaceTransformation(spec),
                 ) { Text(title) }
             }
-            items(scope.entries.size) { index ->
-                val (label, onClick) = scope.entries[index]
+            items(entries.size) { index ->
+                val (label, onClick) = entries[index]
                 Button(
                     onClick = onClick,
                     label = { Text(label) },
@@ -162,7 +159,7 @@ private fun Menu(title: String, content: MenuScope.() -> Unit) {
  * submenu, and the label cannot go stale behind the menu showing it.
  */
 @Composable
-private fun SettingsScreen(state: SkyState, onTime: () -> Unit) {
+private fun SettingsScreen(state: SkyState, onTime: () -> Unit, onCalendar: () -> Unit) {
     val listState = rememberTransformingLazyColumnState()
     val spec = rememberTransformationSpec()
     ScreenScaffold(scrollState = listState) { contentPadding ->
@@ -173,11 +170,10 @@ private fun SettingsScreen(state: SkyState, onTime: () -> Unit) {
                     transformation = SurfaceTransformation(spec),
                 ) { Text("Settings") }
             }
-            // First, and above the persisted settings rather than among them,
-            // because it is the one entry here that is not a stored preference: it
-            // opens a screen, and what it is set to is forgotten when the app stops.
-            // It still wears its value the way the rest do, so a sky that has been
-            // moved says so from the menu as well as from the sky itself.
+            // The two that open a screen rather than stepping a stored value, kept
+            // together and above the rest. Time still wears its value the way the
+            // settings below do, so a sky that has been moved says so from the menu
+            // as well as from the sky itself.
             item {
                 Button(
                     onClick = onTime,
@@ -187,14 +183,22 @@ private fun SettingsScreen(state: SkyState, onTime: () -> Unit) {
                     transformation = SurfaceTransformation(spec),
                 )
             }
+            item {
+                Button(
+                    onClick = onCalendar,
+                    label = { Text("Calendar") },
+                    secondaryLabel = { Text("Sun & Moon") },
+                    modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                    transformation = SurfaceTransformation(spec),
+                )
+            }
             items(Settings.specs.size) { index ->
                 val spec2 = Settings.specs[index]
                 Button(
                     onClick = { Settings.cycle(spec2) },
                     label = { Text(spec2.title) },
-                    // Read inside the item, so turning location updates off
-                    // relabels Azimuth Motion above it rather than leaving it
-                    // claiming to follow something that has stopped arriving.
+                    // Read inside the item rather than captured outside it, so a
+                    // value stepped here relabels its own row on the spot.
                     secondaryLabel = { Text(Settings.label(spec2)) },
                     modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                     transformation = SurfaceTransformation(spec),
@@ -212,5 +216,5 @@ private fun Credit() = Text(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
     textAlign = TextAlign.Center,
     fontSize = 10.sp,
-    color = Color(0xFF8A8A8A),
+    color = DimText,
 )

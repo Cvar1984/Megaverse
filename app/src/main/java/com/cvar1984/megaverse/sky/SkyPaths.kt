@@ -5,7 +5,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.floor
-import kotlin.math.sqrt
 
 /**
  * The two roads the sky's moving bodies travel: the ecliptic, which is the Sun's
@@ -178,8 +177,8 @@ object SkyPaths {
             doubleArrayOf(0.0, 0.0, 1.0)
         }
 
-        val u = normalise(cross(seed, pole))
-        val v = normalise(cross(pole, u))
+        val u = SkyMath.normalise(SkyMath.cross(seed, pole))
+        val v = SkyMath.normalise(SkyMath.cross(pole, u))
 
         val ring = SkyMath.dcos(latDeg)
         val lift = SkyMath.dsin(latDeg)
@@ -197,16 +196,6 @@ object SkyPaths {
         return run
     }
 
-    private fun cross(a: DoubleArray, b: DoubleArray) = doubleArrayOf(
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    )
-
-    private fun normalise(v: DoubleArray): DoubleArray {
-        val len = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
-        return doubleArrayOf(v[0] / len, v[1] / len, v[2] / len)
-    }
 }
 
 /** A dated point on one of the paths: where a body stands, and when. */

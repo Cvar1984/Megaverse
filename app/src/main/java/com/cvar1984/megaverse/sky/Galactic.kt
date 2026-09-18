@@ -32,13 +32,8 @@ object Galactic {
         // that makes this a very slight skew rather than a rotation, so the centre
         // is squared up against the pole before the third axis is taken from them.
         val skew = z[0] * centre[0] + z[1] * centre[1] + z[2] * centre[2]
-        val x = normalise(DoubleArray(3) { centre[it] - z[it] * skew })
-
-        val y = doubleArrayOf(
-            z[1] * x[2] - z[2] * x[1],
-            z[2] * x[0] - z[0] * x[2],
-            z[0] * x[1] - z[1] * x[0],
-        )
+        val x = SkyMath.normalise(DoubleArray(3) { centre[it] - z[it] * skew })
+        val y = SkyMath.cross(z, x)
         doubleArrayOf(x[0], x[1], x[2], y[0], y[1], y[2], z[0], z[1], z[2])
     }
 
@@ -63,11 +58,6 @@ object Galactic {
 
         val out = multiply(multiply(fromEquatorial, equatorialFromEnu), enuFromDevice)
         return FloatArray(9) { out[it].toFloat() }
-    }
-
-    private fun normalise(v: DoubleArray): DoubleArray {
-        val len = kotlin.math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
-        return DoubleArray(3) { v[it] / len }
     }
 
     /** Row-major 3x3 product. */

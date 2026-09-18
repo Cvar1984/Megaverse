@@ -241,16 +241,13 @@ private fun SkyCanvas(target: SkyObject?, state: SkyState, round: Boolean) {
         // you are facing.
         drawCardinals(frame, view, cardinalPaint, scale)
 
-        // Sidereal time is the only thing in the equatorial grid that moves, so
-        // pinning it to one reading holds that grid still. It is held by default,
-        // because a grid that follows the sky keeps creeping and a still reference
-        // is easier to read against.
+        // Laid on the sky at the sidereal time actually being shown, which is what
+        // makes it an equatorial grid rather than a pattern of lines: these are the
+        // RA and Dec of the sky in front of you, and they move with it.
         val equatorial = EquatorialGrid.meshFor(Settings.equatorial)
         if (equatorial.isNotEmpty()) {
-            val gridLst =
-                if (Settings.dynEquatorial) snapshot.lstDeg else state.gridLst ?: snapshot.lstDeg
             val skyFrame = DeviceAim.rotateFrame(
-                frame, SkyMath.equatorialToEnu(snapshot.latDeg, gridLst)
+                frame, SkyMath.equatorialToEnu(snapshot.latDeg, snapshot.lstDeg)
             )
             for (line in equatorial) {
                 drawRun(skyFrame, line.points, view, Color(line.color))
@@ -475,31 +472,23 @@ private fun DrawScope.drawTarget(
     val right = offset[0]
     val up = offset[1]
 
-    var dotX: Float
-    var dotY: Float
     // The perspective divide puts the object where a camera would, not only in the
-    // right general direction. Null means it is not out in front of the back face.
+    // right general direction. Null means it is level with the back of the watch or
+    // behind it, where perspective has nothing to say and the marker is pushed right
+    // out along the way the object lies instead, so it still points the way to swing.
     val onGlass = DeviceAim.toScreen(offset, view)
-    if (onGlass != null) {
-        dotX = onGlass[0]
-        dotY = onGlass[1]
-    } else {
-        // Level with the back of the watch or behind it, where perspective has
-        // nothing to say. Push it right out along the way it lies instead, so the
-        // edge marker still points the way to swing.
-        val span = sqrt(right * right + up * up)
-        val push = 4 * size.width
-        if (span < 0.000001) {
-            // Dead behind the watch, where no way round is more the way to turn
-            // than any other. Sent straight up rather than divided by almost
-            // nothing, which would leave the marker sitting in the middle of the
-            // screen as though the watch were already on it.
-            dotX = cx
-            dotY = cy - push
-        } else {
-            dotX = cx + push * (right / span).toFloat()
-            dotY = cy - push * (up / span).toFloat()
-        }
+    val span = sqrt(right * right + up * up)
+    val push = 4 * size.width
+    // Mutable because the pinning below moves them again. The three ways of arriving
+    // at a first position are one choice, so they are written as one.
+    var (dotX, dotY) = when {
+        onGlass != null -> onGlass[0] to onGlass[1]
+        // Dead behind the watch, where no way round is more the way to turn than any
+        // other. Sent straight up rather than divided by almost nothing, which would
+        // leave the marker in the middle of the screen as though the watch were
+        // already on it.
+        span < 0.000001 -> cx to cy - push
+        else -> cx + push * (right / span).toFloat() to cy - push * (up / span).toFloat()
     }
 
     // Which way the object lies, and how far out the projection put it. Both are
@@ -582,8 +571,14 @@ private data class Readout(
     val tilt: String?,
 )
 
-/** Dim enough to sit behind the numbers, bright enough to read over a grid line. */
-private val DimText = Color(0xFF8A8A8A)
+/**
+ * Dim enough to sit behind the numbers, bright enough to read over a grid line.
+ *
+ * Every screen's quiet text, not just this one's: the column heads on the calendar,
+ * the offset on the time screen, the attribution under the settings. One grey, so
+ * turning it up turns all of them up.
+ */
+val DimText = Color(0xFF8A8A8A)
 
 /**
  * How far down the screen the two blocks of text are at their narrowest, as a
@@ -723,6 +718,10 @@ private fun chordFraction(round: Boolean, yFraction: Float): Float {
 /**
  * The instant on screen, for the line along the top.
  *
+ * Carries its seconds because the smallest step is one: at a second a click the sky
+ * turns fifteen arcseconds, well under a pixel, so this line is the only thing that
+ * moves and the only sign the crown is doing anything at all.
+ *
  * The instant and not the offset, because this row is the narrowest on a round
  * display - it sits a tenth of the way down, where the glass has barely half its
  * width - and the two together came to twenty-four characters and were cut off mid
@@ -731,7 +730,7 @@ private fun chordFraction(round: Boolean, yFraction: Float): Float {
  */
 private fun travelledLabel(snapshot: SkySnapshot): String =
     Instant.ofEpochMilli(snapshot.millis).atZone(ZoneId.systemDefault())
-        .format(DateTimeFormatter.ofPattern("d MMM HH:mm"))
+        .format(DateTimeFormatter.ofPattern("d MMM HH:mm:ss"))
 
 /**
  * The numbers and words the chrome shows, worked out from the live frame.
@@ -771,29 +770,24 @@ private fun SkyState.readout(target: SkyObject?): Readout? {
     val enu = placed.enu
     val offset = DeviceAim.viewOffset(frame, enu[0], enu[1], enu[2])
 
+    // Written guidance is measured against gravity rather than the watch's own axes,
+    // so rolling the wrist leaves it alone: it says how to swing your arm, which does
+    // not depend on how the watch is turned in your hand. These two are the
+    // differences down the columns above.
+    //
+    // Aimed within a couple of degrees of straight up or down there is no sensible
+    // "turn left" to give, since every direction is sideways from there. The picture
+    // above still holds, so only these two lines drop out.
+    val basis = DeviceAim.aimBasis(aimElev, aimAz)
     // Forward is the cosine of the angle off the aim, so it settles the lock on its own.
-    var note: String? = null
-    var tilt: String? = null
-    if (identifying) {
-        note = detail(placed, snapshot.jd)
-    } else if (SkyMath.dacos(offset[2]) < LOCK_DEGREES) {
-        note = "On target"
-    } else {
-        // Written guidance is measured against gravity rather than the watch's own
-        // axes, so rolling the wrist leaves it alone: it says how to swing your arm,
-        // which does not depend on how the watch is turned in your hand. These two
-        // are the differences down the columns above.
-        //
-        // Aimed within a couple of degrees of straight up or down there is no
-        // sensible "turn left" to give, since every direction is sideways from
-        // there. The picture above still holds, so only these two lines drop out.
-        val basis = DeviceAim.aimBasis(aimElev, aimAz)
-        if (basis == null) {
-            note = "Straight up/down"
-        } else {
+    val (note: String?, tilt: String?) = when {
+        identifying -> detail(placed, snapshot.jd) to null
+        SkyMath.dacos(offset[2]) < LOCK_DEGREES -> "On target" to null
+        basis == null -> "Straight up/down" to null
+        else -> {
             val aimed = DeviceAim.project(basis, enu[0], enu[1], enu[2])
-            note = "Turn ${abs(aimed[0]).roundToInt()} " + if (aimed[0] >= 0) "right" else "left"
-            tilt = "Tilt ${abs(aimed[1]).roundToInt()} " + if (aimed[1] >= 0) "up" else "down"
+            "Turn ${abs(aimed[0]).roundToInt()} " + (if (aimed[0] >= 0) "right" else "left") to
+                "Tilt ${abs(aimed[1]).roundToInt()} " + (if (aimed[1] >= 0) "up" else "down")
         }
     }
 

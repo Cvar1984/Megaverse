@@ -52,8 +52,6 @@ object Settings {
         SettingSpec("milkyWay", "Milky Way", TOGGLE),
         SettingSpec("ecliptic", "Sun Path", PATH),
         SettingSpec("moonPath", "Moon Path", PATH),
-        SettingSpec("dynEquatorial", "Equatorial Motion", TOGGLE),
-        SettingSpec("dynAzimuth", "Azimuth Motion", TOGGLE),
         SettingSpec("locationMinutes", "Update Location", LOCATION),
     )
 
@@ -109,8 +107,6 @@ object Settings {
      * make the setting read as off on a watch where it is merely unavailable.
      */
     val milkyWay: Boolean get() = this["milkyWay"] != 0
-    val dynEquatorial: Boolean get() = this["dynEquatorial"] != 0
-    val dynAzimuth: Boolean get() = this["dynAzimuth"] != 0
     val locationMinutes: Int get() = this["locationMinutes"]
 
     /** 0 draws nothing, 1 the bare line, 2 the line with its dates marked. */
@@ -125,7 +121,6 @@ object Settings {
         return when (spec.key) {
             "horizonGrid", "eqGridStep" -> gridLabel(v)
             "locationMinutes" -> if (v <= 0) "One fix only" else "Every $v min"
-            "dynEquatorial" -> if (v != 0) "Turns with sky" else "Held still"
             // Says why rather than sitting there doing nothing on a watch whose
             // system software has no shader to draw it with.
             "milkyWay" -> when {
@@ -137,14 +132,6 @@ object Settings {
                 0 -> "Off"
                 1 -> "Line"
                 else -> "Line + dates"
-            }
-            // Azimuth Motion has nothing but position updates to follow, since the
-            // horizon frame has no clock in it. Says so when it is switched on with
-            // nothing arriving, instead of reading as on and doing nothing.
-            "dynAzimuth" -> when {
-                v == 0 -> "Held still"
-                locationMinutes <= 0 -> "On - no updates"
-                else -> "Follows position"
             }
             else -> if (v != 0) "On" else "Off"
         }

@@ -8,10 +8,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import kotlin.math.atan2
@@ -164,18 +162,19 @@ fun DrawScope.drawSkyObject(
     base: Int,
     scale: Float,
     offset: DoubleArray,
-    sunOffset: DoubleArray?,
-    zenith: DoubleArray?,
+    sunOffset: DoubleArray,
+    zenith: DoubleArray,
 ) {
     val r = ObjectArt.radius(obj) * scale
     val sphere = PlanetTexture.sphere(context, obj, (2 * r).roundToInt())
     when {
+        // A star, which has no map and is a point of light anyway. Also what a body
+        // whose map somehow would not load falls back to, which is the whole of the
+        // fallback: a coloured disc, not a second way of drawing everything.
+        sphere == null -> drawCircle(Color(base), r, Offset(x, y))
         obj.type == SkyType.SUN -> drawSun(x, y, base, r, sphere, offset, zenith)
-        obj.type == SkyType.MOON && sunOffset != null ->
-            drawMoon(x, y, base, r, sphere, offset, sunOffset, zenith)
-        obj.type == SkyType.PLANET ->
-            drawPlanet(x, y, obj, base, r, scale, sphere, offset, sunOffset, zenith)
-        else -> drawCircle(Color(base), r, Offset(x, y))
+        obj.type == SkyType.MOON -> drawMoon(x, y, base, r, sphere, offset, sunOffset, zenith)
+        else -> drawPlanet(x, y, obj, base, r, scale, sphere, offset, sunOffset, zenith)
     }
 }
 
@@ -202,35 +201,31 @@ private const val MOON_RELIEF = 0.35f
 /** How far down the unlit side of the Moon is turned. Earthshine is faint. */
 private const val EARTHSHINE = 6
 
-/** White, so a sphere gradient becomes pure shading to multiply over a surface. */
+/** White, so [shadingBrush] leaves a surface's own colours alone where it is lit. */
 private val SHADING = 0xFFFFFFFF.toInt()
 
 /**
- * A lit ball: white towards the light, the body's own colour across the middle,
- * falling away to a dark limb.
+ * How a ball is lit, as a mask to multiply over a photograph of its surface: white
+ * towards the light, falling away to a dark limb. It says how lit each part of the
+ * face is and nothing about what colour it is.
  *
  * ([lx], [ly]) is the screen direction the light comes from, and may be (0, 0) when
  * there is nothing to go on - the gradient then sits centred and still rounds the
  * disc. [relief] scales the whole effect, both the shift of the highlight and the
  * depth of the limb, so one number says how much of a ball this is.
  *
- * Built in [SHADING] it is a pure light-and-shade mask, which multiplied over a
- * photograph of the surface leaves the colours alone and only says how lit each part
- * of it is. Built in a body's own colour it is the whole drawing, for bodies with no
- * map and for discs too small to show one.
- *
  * The gradient's radius is derived from the shift rather than fixed, so the far limb
  * always lands at the dark end whatever the relief.
  */
-private fun sphereBrush(
-    base: Int, x: Float, y: Float, r: Float, lx: Float, ly: Float, relief: Float,
+private fun shadingBrush(
+    x: Float, y: Float, r: Float, lx: Float, ly: Float, relief: Float,
 ): Brush {
-    val body = Color(base)
+    val white = Color(SHADING)
     val shift = HIGHLIGHT_OFFSET * relief
     return Brush.radialGradient(
-        0f to lerp(body, Color.White, 0.40f * relief),
-        0.45f to body,
-        1f to lerp(body, Color.Black, 0.75f * relief),
+        0f to white,
+        0.45f to white,
+        1f to lerp(white, Color.Black, 0.75f * relief),
         center = Offset(x + lx * r * shift, y + ly * r * shift),
         radius = r * (1f + shift) * 1.08f,
     )
@@ -254,7 +249,7 @@ private fun DrawScope.drawSphere(sphere: ImageBitmap, x: Float, y: Float, poleDe
  * Which way round to turn a sprite so its top points at the zenith, in degrees
  * clockwise. Zero when there is nothing to go on, which leaves north up the screen.
  */
-private fun poleAngle(offset: DoubleArray, zenith: DoubleArray?): Float {
+private fun poleAngle(offset: DoubleArray, zenith: DoubleArray): Float {
     val up = tangentScreenDir(offset, zenith) ?: return 0f
     return Math.toDegrees(atan2(up[0].toDouble(), -up[1].toDouble())).toFloat()
 }
@@ -270,7 +265,7 @@ private fun poleAngle(offset: DoubleArray, zenith: DoubleArray?): Float {
  */
 private fun DrawScope.drawSun(
     x: Float, y: Float, base: Int, r: Float,
-    sphere: ImageBitmap?, offset: DoubleArray, zenith: DoubleArray?,
+    sphere: ImageBitmap, offset: DoubleArray, zenith: DoubleArray,
 ) {
     val at = Offset(x, y)
     val body = Color(base)
@@ -292,26 +287,11 @@ private fun DrawScope.drawSun(
         at,
     )
 
-    if (sphere == null) {
-        drawCircle(
-            Brush.radialGradient(
-                0f to lerp(body, Color.White, 0.72f),
-                0.55f to body,
-                1f to lerp(body, Color.Black, 0.42f),
-                center = at,
-                radius = r,
-            ),
-            r,
-            at,
-        )
-        return
-    }
-
     // Lit from within, so the shading is concentric rather than thrown from one side.
     val rr = sphere.width / 2f
     drawSphere(sphere, x, y, poleAngle(offset, zenith))
     drawCircle(
-        sphereBrush(SHADING, x, y, rr, 0f, 0f, SUN_RELIEF), rr, at,
+        shadingBrush(x, y, rr, 0f, 0f, SUN_RELIEF), rr, at,
         blendMode = BlendMode.Multiply,
     )
 }
@@ -335,8 +315,8 @@ private fun DrawScope.drawSun(
  * lit side has to be put back rather than left behind.
  */
 private fun DrawScope.drawMoon(
-    x: Float, y: Float, base: Int, r: Float, sphere: ImageBitmap?,
-    offset: DoubleArray, sunOffset: DoubleArray, zenith: DoubleArray?,
+    x: Float, y: Float, base: Int, r: Float, sphere: ImageBitmap,
+    offset: DoubleArray, sunOffset: DoubleArray, zenith: DoubleArray,
 ) {
     val dot = offset[0] * sunOffset[0] + offset[1] * sunOffset[1] + offset[2] * sunOffset[2]
     val c = -dot
@@ -346,22 +326,6 @@ private fun DrawScope.drawMoon(
     val toward = tangentScreenDir(offset, sunOffset) ?: floatArrayOf(1f, 0f)
     val bx = toward[0]
     val by = toward[1]
-
-    if (sphere == null) {
-        val dark = SolidColor(Color(ObjectArt.shade(base, 1, EARTHSHINE)))
-        val lit = sphereBrush(base, x, y, r, bx, by, MOON_RELIEF)
-
-        // Unlit side drawn faint rather than left out: on a black panel a thin
-        // crescent would be all there is of the Moon, and easy to lose among stars.
-        drawCircle(Color(ObjectArt.shade(base, 1, EARTHSHINE)), r, Offset(x, y))
-        drawPath(halfEllipse(x, y, bx, by, r, r), lit)
-
-        // The terminator bulges past the middle into the dark side when gibbous and
-        // bites into the bright side when a crescent. Same ellipse either way: only
-        // what it is painted with changes, and its width is c.
-        drawPath(halfEllipse(x, y, bx, by, (-c * r).toFloat(), r), if (c >= 0) lit else dark)
-        return
-    }
 
     val rr = sphere.width / 2f
     val at = Offset(x, y)
@@ -375,7 +339,7 @@ private fun DrawScope.drawMoon(
     clipPath(litPath(x, y, bx, by, c, rr)) {
         drawSphere(sphere, x, y, pole)
         drawCircle(
-            sphereBrush(SHADING, x, y, rr, bx, by, MOON_RELIEF), rr, at,
+            shadingBrush(x, y, rr, bx, by, MOON_RELIEF), rr, at,
             blendMode = BlendMode.Multiply,
         )
     }
@@ -412,7 +376,7 @@ private fun litPath(x: Float, y: Float, bx: Float, by: Float, c: Double, r: Floa
  */
 private fun DrawScope.drawPlanet(
     x: Float, y: Float, obj: SkyObject, base: Int, r: Float, scale: Float,
-    sphere: ImageBitmap?, offset: DoubleArray, sunOffset: DoubleArray?, zenith: DoubleArray?,
+    sphere: ImageBitmap, offset: DoubleArray, sunOffset: DoubleArray, zenith: DoubleArray,
 ) {
     val along = equatorDirection(offset, zenith)
     val ax = along[0]
@@ -430,41 +394,11 @@ private fun DrawScope.drawPlanet(
     }
 
     val toward = tangentScreenDir(offset, sunOffset) ?: floatArrayOf(0f, 0f)
-    if (sphere == null) {
-        drawCircle(sphereBrush(base, x, y, r, toward[0], toward[1], 1f), r, Offset(x, y))
-        if (obj.id == "jupiter") {
-            // Two belts either side of the equator, which is as much as any small
-            // telescope shows and as much as there is room for here.
-            val belt = Color(ObjectArt.shade(base, 3, 5))
-            drawBelt(x, y, r, ax, ay, r / 2, belt)
-            drawBelt(x, y, r, ax, ay, -r / 2, belt)
-        }
-        return
-    }
-
     val rr = sphere.width / 2f
     drawSphere(sphere, x, y, poleAngle(offset, zenith))
     drawCircle(
-        sphereBrush(SHADING, x, y, rr, toward[0], toward[1], 1f), rr, Offset(x, y),
+        shadingBrush(x, y, rr, toward[0], toward[1], 1f), rr, Offset(x, y),
         blendMode = BlendMode.Multiply,
-    )
-}
-
-/**
- * A belt across the disc at the given distance from the equator, cut to the chord
- * so it stops at the limb instead of running past it.
- */
-private fun DrawScope.drawBelt(
-    x: Float, y: Float, r: Float, ax: Float, ay: Float, gap: Float, color: Color,
-) {
-    val half = sqrt((r * r - gap * gap).coerceAtLeast(0f))
-    val cx = x + gap * -ay
-    val cy = y + gap * ax
-    drawLine(
-        color,
-        Offset(cx - half * ax, cy - half * ay),
-        Offset(cx + half * ax, cy + half * ay),
-        strokeWidth = 1f,
     )
 }
 
@@ -476,8 +410,7 @@ private fun DrawScope.drawBelt(
  * Both the Sun, which orients the phase and the lighting, and the zenith, which
  * orients the poles and the rings, are wanted this way round.
  */
-private fun tangentScreenDir(offset: DoubleArray, other: DoubleArray?): FloatArray? {
-    if (other == null) return null
+private fun tangentScreenDir(offset: DoubleArray, other: DoubleArray): FloatArray? {
     val dot = offset[0] * other[0] + offset[1] * other[1] + offset[2] * other[2]
     val vx = (other[0] - dot * offset[0]).toFloat()
     val vy = -(other[1] - dot * offset[1]).toFloat()
@@ -490,7 +423,7 @@ private fun tangentScreenDir(offset: DoubleArray, other: DoubleArray?): FloatArr
  * Screen direction of the object's equator: square to the way the zenith lies from
  * it. Falls back to across the screen when there is nothing to go on.
  */
-private fun equatorDirection(offset: DoubleArray, zenith: DoubleArray?): FloatArray {
+private fun equatorDirection(offset: DoubleArray, zenith: DoubleArray): FloatArray {
     val up = tangentScreenDir(offset, zenith) ?: return floatArrayOf(1f, 0f)
     return floatArrayOf(-up[1], up[0])
 }
