@@ -17,10 +17,6 @@ A port of [Miniverse](https://github.com/Cvar1984/Miniverse) to Wear OS.
 Ten seconds of the crown moving the sky through a day and back. The amber line is
 the time being shown; the Sun, the ecliptic and its date marks all move with it.
 
-[The full walkthrough](Screenshot/megaverse-demo.mp4) is 58 seconds and covers the
-rest: the overlays, the settings, time travel by button and by crown, the turn-and-
-tilt guidance, and the calendar. Both were recorded on a Wear OS 4 emulator.
-
 ## Contents
 
 - [Demo](#demo)
